@@ -33,6 +33,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .btn.warn{background:var(--danger);color:#fff}
 .sync{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;background:none;border:0;padding:4px}
 .sync.home{cursor:default}
+.lock{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 16px;text-align:center}
+.lock .lk{font-size:38px;line-height:1;margin-bottom:8px}
+.lock p{margin:6px 0 12px}
+.lock .hint{font-size:13px;color:var(--muted);margin:12px 0 0}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--done)}
 .dot.on{background:var(--tick)} .dot.busy{background:#e0a528} .dot.err{background:var(--danger)}
 input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 12px;height:44px;flex:1;min-width:0;user-select:text;-webkit-user-select:text}
@@ -154,6 +158,7 @@ const FIREBASE_CONFIG = {
 /* =========================================================== */
 
 const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
+const INDEX_ID = '_group_index';   // 群組清單（只有名稱，不含內容）放在這份雲端文件
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const $ = s => document.querySelector(s);
 
@@ -170,8 +175,8 @@ let homeView = localStorage.getItem('mylists-homeview') || 'list';
 let db = null;
 
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(LS_DATA)); if(d && Array.isArray(d.groups)) return d; }catch(e){}
-  return { groups: [], updatedAt: 0 };
+  try{ const d = JSON.parse(localStorage.getItem(LS_DATA)); if(d && Array.isArray(d.groups)){ d.deleted = d.deleted || []; return d; } }catch(e){}
+  return { groups: [], deleted: [], updatedAt: 0 };
 }
 function commit(g){
   g = g || (view ? group(view) : null);
@@ -263,9 +268,10 @@ function listen(g){
       if(!data || !Array.isArray(data.items)){ setG(cur.id, 'err'); return; }
       const ru = remote.updatedAt || 0, lu = cur.updatedAt || 0;
       if(ru > lu){
-        cur.name = data.name || cur.name; cur.items = data.items; cur.updatedAt = ru; saveLocal();
+        cur.items = data.items; cur.updatedAt = ru; saveLocal();
         if(!editing) render();
       } else if(ru < lu && !cache){ pushNow(cur.id); return; }
+      if(!data.gid && !cache){ pushNow(cur.id); return; }          // 舊資料補上群組識別
       if(!cache) setG(cur.id, 'on');
     }, err => { console.error(err); setG(g.id, 'err'); });
   }catch(e){ console.error(e); setG(g.id, 'err'); }
@@ -282,7 +288,7 @@ function pushNow(id){
   if(!g.updatedAt){ g.updatedAt = Date.now(); saveLocal(); }
   try{
     ensureDb().collection('checklists').doc(g.code)
-      .set({ json: JSON.stringify({ name: g.name, items: g.items }), updatedAt: g.updatedAt })
+      .set({ json: JSON.stringify({ gid: g.id, name: g.name, items: g.items }), updatedAt: g.updatedAt })
       .then(() => setG(id, 'on')).catch(e => { console.error(e); setG(id, 'err'); });
   }catch(e){ console.error(e); setG(id, 'err'); }
 }
@@ -290,6 +296,86 @@ function pushNow(id){
 function flushAll(){ Object.keys(timers).forEach(pushNow); }
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') flushAll(); });
 window.addEventListener('pagehide', flushAll);
+
+/* ---------- 群組清單同步（不需代碼；只同步「有哪些群組、叫什麼」） ---------- */
+let reconciling = false, reAgain = false;
+function mergeIndex(remote){
+  const map = new Map(remote.map(e => [e.id, { ...e }]));
+  let changed = false;
+  (state.deleted || []).forEach(id => {
+    const e = map.get(id);
+    if(!e || !e.del){ map.set(id, { id, del: true, t: Date.now() }); changed = true; }
+  });
+  state.groups.forEach(g => {
+    const e = map.get(g.id);
+    if(!e || (e.del && g.revive)){
+      g.nameT = g.nameT || Date.now(); g.revive = false;
+      map.set(g.id, { id: g.id, name: g.name, t: g.nameT }); changed = true;
+    } else if(!e.del && (g.nameT || 0) > (e.t || 0)){
+      e.name = g.name; e.t = g.nameT; changed = true;
+    }
+  });
+  return { list: [...map.values()], changed };
+}
+function applyIndex(list){
+  let dirty = false;
+  list.forEach(e => {
+    const g = group(e.id);
+    if(e.del){
+      if(g){ stopListen(g.id); state.groups = state.groups.filter(x => x.id !== g.id); if(view === g.id) view = null; dirty = true; }
+      return;
+    }
+    if(!g){ state.groups.push({ id: e.id, name: e.name, items: [], code: '', updatedAt: 0, locked: true, nameT: e.t || 0 }); dirty = true; }
+    else if((e.t || 0) > (g.nameT || 0)){ g.name = e.name; g.nameT = e.t; dirty = true; }
+  });
+  return dirty;
+}
+async function reconcileIndex(){
+  if(!configured()) return;
+  if(reconciling){ reAgain = true; return; }
+  reconciling = true;
+  try{
+    const database = ensureDb(), ref = database.collection('checklists').doc(INDEX_ID);
+    const sent = new Set(state.deleted || []);
+    let merged = [];
+    await database.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      let remote = [];
+      if(snap.exists){ try{ remote = JSON.parse(snap.data().json).groups || []; }catch(e){} }
+      const r = mergeIndex(remote);
+      merged = r.list;
+      if(r.changed || !snap.exists) tx.set(ref, { json: JSON.stringify({ groups: r.list }), updatedAt: Date.now() });
+    });
+    state.deleted = (state.deleted || []).filter(id => !sent.has(id));
+    const dirty = applyIndex(merged);
+    saveLocal();
+    if(dirty && !editing) render();
+  }catch(e){ console.error('群組清單同步失敗', e); }
+  finally{ reconciling = false; if(reAgain){ reAgain = false; reconcileIndex(); } }
+}
+function startIndex(){
+  if(!configured()) return;
+  try{
+    ensureDb().collection('checklists').doc(INDEX_ID).onSnapshot(snap => { if(!snap.metadata.hasPendingWrites) reconcileIndex(); }, e => console.error(e));
+  }catch(e){ console.error(e); }
+  reconcileIndex();
+  window.addEventListener('online', reconcileIndex);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') reconcileIndex(); });
+}
+async function unlockWithCode(g, code){
+  if(!configured()){ toast('尚未設定 Firebase'); return; }
+  if(code.length < 6){ toast('同步代碼至少 6 個字元'); return; }
+  if(state.groups.some(x => x.id !== g.id && x.code === code)){ toast('這個代碼已被另一個群組使用'); return; }
+  try{
+    const snap = await ensureDb().collection('checklists').doc(code).get();
+    if(!snap.exists){ toast('找不到這個代碼'); return; }
+    let d; try{ d = JSON.parse(snap.data().json); }catch(e){}
+    if(!d || !Array.isArray(d.items)){ toast('這個代碼的資料格式不符'); return; }
+    if(d.gid && d.gid !== g.id){ toast('這個代碼不是這個群組的'); return; }
+    g.code = code; g.locked = false; g.items = d.items; g.updatedAt = snap.data().updatedAt || Date.now();
+    saveLocal(); listen(g); render(); toast('已解鎖');
+  }catch(e){ console.error(e); toast('連線失敗，請檢查網路或 Firestore 設定'); }
+}
 
 async function attachCode(g, code){
   if(!configured()){ toast('尚未設定 Firebase'); return; }
@@ -302,8 +388,9 @@ async function attachCode(g, code){
       saveLocal(); listen(g); render(); toast('已開始同步');
     };
     if(!snap.exists){ go(false); return; }
-    let nm = '未命名', n = 0;
-    try{ const d = JSON.parse(snap.data().json); nm = d.name || nm; n = leaves({ items: d.items || [] }).length; }catch(e){}
+    let nm = '未命名', n = 0, other = false;
+    try{ const d = JSON.parse(snap.data().json); nm = d.name || nm; n = leaves({ items: d.items || [] }).length; other = !!d.gid && d.gid !== g.id; }catch(e){}
+    if(other){ toast(`這個代碼屬於另一個群組「${nm}」，請用首頁的「加入」`); return; }
     openDialog((f, close) => {
       f.append(el('h2', {}, '這個代碼已有資料'),
         el('p', {}, `雲端已有群組「${nm}」（${n} 個項目）。連結後，目前這個群組的內容會被雲端內容取代。確定要連結嗎？`),
@@ -331,8 +418,11 @@ function openJoin(){
         if(!snap.exists){ toast('找不到這個代碼。要建立新的同步群組，請先建立群組，再到群組內設定代碼'); return; }
         let d; try{ d = JSON.parse(snap.data().json); }catch(e){}
         if(!d || !Array.isArray(d.items)){ toast('這個代碼的資料格式不符'); return; }
-        const ng = { id: uid(), name: d.name || '同步群組', items: d.items, code: c, updatedAt: snap.data().updatedAt || Date.now() };
-        state.groups.push(ng); saveLocal(); listen(ng); render(); toast(`已加入「${ng.name}」`);
+        const ex = d.gid && group(d.gid);
+        if(ex && ex.locked){ unlockWithCode(ex, c); return; }
+        if(ex){ toast('這個群組已在這台裝置上'); return; }
+        const ng = { id: d.gid || uid(), name: d.name || '同步群組', items: d.items, code: c, updatedAt: snap.data().updatedAt || Date.now(), nameT: Date.now(), revive: true };
+        state.groups.push(ng); saveLocal(); listen(ng); render(); toast(`已加入「${ng.name}」`); reconcileIndex();
       }catch(e){ console.error(e); toast('連線失敗，請檢查網路或 Firestore 設定'); }
     };
     enterTo(code, go);
@@ -345,9 +435,9 @@ function openJoin(){
 }
 
 /* ---------- 操作 ---------- */
-function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [] }); commit(); }
-function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; commit(g); } }
-function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); view = null; commit(); }
+function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [], nameT: Date.now() }); commit(); reconcileIndex(); }
+function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; g.nameT = Date.now(); commit(g); reconcileIndex(); } }
+function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); state.deleted = [...(state.deleted || []), id]; view = null; commit(); reconcileIndex(); }
 function addItems(key, raw, qtyRaw){
   const g = group(view); if(!g) return;
   const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
@@ -449,7 +539,7 @@ function openRename(g){
 }
 function deleteGroupFlow(g){
   const n = leaves(g).length;
-  askDelete(`刪除群組「${g.name}」？`, (n ? `裡面有 ${n} 個項目，會一起刪除。` : '這個群組是空的。') + (g.code ? ' 雲端上的資料不會被刪除，只是從這台裝置移除，之後仍可用同步代碼再加入。' : ''), () => {
+  askDelete(`刪除群組「${g.name}」？`, (n ? `裡面有 ${n} 個項目，會一起刪除。` : '這個群組是空的。') + (configured() ? ' 這個群組會從你所有裝置的清單中消失。' : '') + (g.code ? ' 雲端上的內容不會被刪除，之後仍可用同步代碼再加入。' : ''), () => {
     setTimeout(() => askDelete('再確認一次', `真的要刪除「${g.name}」嗎？刪除後無法復原。`, () => deleteGroup(g.id), '確定刪除'), 60);
   }, '繼續');
 }
@@ -485,14 +575,14 @@ function renderHome(app){
           act('badge l', '改名 ' + g.name, '✎', () => openRename(g)),
           act('badge r', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
         el('span', { class: 'nm' }, g.name + (g.code ? ' 🔗' : '')),
-        el('span', { class: 'ct' }, total ? `${done}/${total}` : '')));
+        el('span', { class: 'ct' }, g.locked ? '🔒' : (total ? `${done}/${total}` : ''))));
     });
     app.append(wrap);
   } else {
     state.groups.forEach(g => {
       const lv = leaves(g), done = lv.filter(i => i.done).length, total = lv.length;
       app.append(el('div', { class: 'group', role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
-        el('div', { class: 'top' }, el('span', { class: 'name' }, g.name + (g.code ? ' 🔗' : '')), el('span', { class: 'cnt' }, `${done} / ${total}`),
+        el('div', { class: 'top' }, el('span', { class: 'name' }, g.name + (g.code ? ' 🔗' : '')), el('span', { class: 'cnt' }, g.locked ? '🔒' : `${done} / ${total}`),
           act('mini', '改名 ' + g.name, '✎', () => openRename(g)),
           act('mini del', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
         el('div', { class: 'bar' }, el('i', { style: `width:${total ? done/total*100 : 0}%` }))));
@@ -522,7 +612,7 @@ function renderGroup(app, g){
   if(editing && editing.id === '__title'){
     const inp = el('input', { type: 'text', class: 'title-in e-name', value: g.name, 'aria-label': '群組名稱' });
     title = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
-    bindEdit(title, [inp], () => { const v = inp.value.trim(), gg = group(view); if(v && gg) gg.name = v; editing = null; commit(); }, stopEdit);
+    bindEdit(title, [inp], () => { const v = inp.value.trim(), gg = group(view); if(v && gg){ gg.name = v; gg.nameT = Date.now(); } editing = null; commit(); reconcileIndex(); }, stopEdit);
   } else {
     const startEdit = () => { editing = { id: '__title', field: 'text' }; render(); };
     title = el('h1', { title: '點兩下（手機：按住再放開）可修改名稱', onclick: () => { if(!blocked() && isDbl('__title')) startEdit(); } }, g.name);
@@ -533,6 +623,7 @@ function renderGroup(app, g){
     title, groupBadge(g),
     el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯')));
 
+  if(g.locked){ app.append(lockPanel(g)); return; }
   app.append(el('div', { class: 'toolbar' },
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all) }, checkBox(all), all ? '全部取消' : '全選'),
     el('span', { class: 'sum' }, lv.length ? `已完成 ${done} / ${lv.length}` : '')));
@@ -584,6 +675,17 @@ function buildAddBar(g){
   return el('div', { class: 'addbar' }, el('div', { class: 'in' },
     el('div', { class: 'ctl' }, sel || '', modeBtn),
     el('div', { class: 'line' }, name, qty, ok)));
+}
+
+function lockPanel(g){
+  const code = el('input', { type: 'text', placeholder: '輸入這個群組的同步代碼', autocapitalize: 'off', autocomplete: 'off', 'aria-label': '同步代碼' });
+  const go = () => unlockWithCode(g, cleanCode(code.value));
+  enterTo(code, go);
+  return el('div', { class: 'lock' },
+    el('div', { class: 'lk' }, '🔒'),
+    el('p', {}, '這個群組的內容需要同步代碼才看得到。'),
+    el('div', { class: 'line' }, code, el('button', { class: 'btn', onclick: go }, '解鎖')),
+    el('p', { class: 'hint' }, '如果這個群組在另一台裝置上還沒設定同步代碼，內容只存在那台裝置，請先到那台裝置的「⋯」裡設定代碼。'));
 }
 
 function itemRow(it, n){
@@ -822,6 +924,7 @@ function openGroupMenu(g){
       if(c && !configured()){ toast('尚未設定 Firebase'); return; }
       close();
       renameGroup(g.id, name.value);
+      if(g.locked){ if(c) unlockWithCode(g, c); return; }
       if(c !== (g.code || '')){
         if(!c){ stopListen(g.id); g.code = ''; saveLocal(); render(); toast('已停止同步，雲端資料仍保留'); }
         else attachCode(g, c);
@@ -841,6 +944,7 @@ let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList
 localStorage.removeItem(LS_CODE);
 render();
 state.groups.forEach(g => { if(g.code) listen(g); });
+startIndex();
 </script>
 </body>
 </html>
