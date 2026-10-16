@@ -136,6 +136,13 @@ dialog input{width:100%}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+/* 每個群組、小群組各自的底色（色相隨機；沒有分組的項目維持原樣） */
+.sub{--sub:hsl(var(--h,140) 55% 88%);--sub-soft:hsl(var(--h,140) 60% 94%);--sub-line:hsl(var(--h,140) 45% 62%)}
+.group{background:hsl(var(--h,200) 55% 95%);border-color:hsl(var(--h,200) 40% 82%)}
+@media (prefers-color-scheme: dark){
+  .sub{--sub:hsl(var(--h,140) 32% 23%);--sub-soft:hsl(var(--h,140) 28% 16%);--sub-line:hsl(var(--h,140) 35% 42%)}
+  .group{background:hsl(var(--h,200) 28% 17%);border-color:hsl(var(--h,200) 25% 28%)}
+}
 </style>
 </head>
 <body>
@@ -448,9 +455,19 @@ function addItems(key, raw, qtyRaw){
   names.forEach(t => target.push({ id: uid(), text: t, qty: q, done: false }));
   commit();
 }
+const subHue = s => (typeof s.hue === 'number') ? s.hue : hue(s.id);
+function pickHue(used){            // 隨機挑色相，並盡量和已有的小群組拉開距離
+  let best = 0, bestD = -1;
+  for(let i = 0; i < 30; i++){
+    const c = Math.floor(Math.random() * 360);
+    const d = used.length ? Math.min(...used.map(u => { const x = Math.abs(u - c) % 360; return Math.min(x, 360 - x); })) : 360;
+    if(d > bestD){ bestD = d; best = c; }
+  }
+  return best;
+}
 function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
-  const sub = { id: uid(), name, items: [], collapsed: false, done: false };
+  const sub = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue(g.items.filter(isSub).map(subHue)) };
   g.items.push(sub); addTarget = sub.id; refocus = true;
   toast(`已建立「${name}」，接著新增的項目會放進去`);
   commit();
@@ -581,7 +598,7 @@ function renderHome(app){
   } else {
     state.groups.forEach(g => {
       const lv = leaves(g), done = lv.filter(i => i.done).length, total = lv.length;
-      app.append(el('div', { class: 'group', role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
+      app.append(el('div', { class: 'group', style: `--h:${hue(g.id)}`, role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
         el('div', { class: 'top' }, el('span', { class: 'name' }, g.name + (g.code ? ' 🔗' : '')), el('span', { class: 'cnt' }, g.locked ? '🔒' : `${done} / ${total}`),
           act('mini', '改名 ' + g.name, '✎', () => openRename(g)),
           act('mini del', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
@@ -738,7 +755,7 @@ function itemRow(it, n){
 
 function subBlock(s, n){
   const done = subDone(s);
-  const block = el('div', { class: 'sub', 'data-unit': s.id });
+  const block = el('div', { class: 'sub', 'data-unit': s.id, style: `--h:${subHue(s)}` });
   let head;
   if(editing && editing.id === s.id){
     const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
