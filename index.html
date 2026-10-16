@@ -32,6 +32,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .btn.danger{background:transparent;color:var(--danger);border:1px solid var(--line)}
 .btn.warn{background:var(--danger);color:#fff}
 .sync{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;background:none;border:0;padding:4px}
+.sync.home{cursor:default}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--done)}
 .dot.on{background:var(--tick)} .dot.busy{background:#e0a528} .dot.err{background:var(--danger)}
 input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 12px;height:44px;flex:1;min-width:0;user-select:text;-webkit-user-select:text}
@@ -166,18 +167,20 @@ let editing = null;              // { id, field:'text'|'qty' }，id='__title' �
 let refocus = false, undoSnap = null, pendingRender = false;
 let addTarget = '';
 let homeView = localStorage.getItem('mylists-homeview') || 'list';
-let db = null, docRef = null, unsub = null, saveTimer = null;
-let syncStatus = 'off', syncCode = localStorage.getItem(LS_CODE) || '';
+let db = null;
 
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(LS_DATA)); if(d && Array.isArray(d.groups)) return d; }catch(e){}
   return { groups: [], updatedAt: 0 };
 }
-function commit(){
-  state.updatedAt = Date.now();
-  localStorage.setItem(LS_DATA, JSON.stringify(state));
+function commit(g){
+  g = g || (view ? group(view) : null);
+  const now = Date.now();
+  if(g) g.updatedAt = now;
+  state.updatedAt = now;
+  saveLocal();
   render();
-  pushSoon();
+  if(g) pushSoon(g);
 }
 const group = id => state.groups.find(g => g.id === id);
 const appTitle = () => state.title || '我的清單';
@@ -211,55 +214,140 @@ function find(g, id){
 }
 const cleanQty = v => { const s = String(v ?? '').replace(/\D/g, '').slice(0, 5); return s === '' ? '' : Number(s); };
 
-/* ---------- 同步 ---------- */
+/* ---------- 同步（每個群組各自一組代碼；有代碼才會上雲端） ---------- */
 const configured = () => !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
-function statusText(){
-  if(!configured()) return '僅存本機';
-  if(!syncCode) return '尚未設定同步代碼';
-  return {on:'已同步', busy:'同步中…', err:'同步失敗', off:'未連線'}[syncStatus];
+const unsubs = {}, timers = {}, gstat = {};
+const cleanCode = v => String(v || '').trim().replace(/[\/\s]/g, '');
+const saveLocal = () => localStorage.setItem(LS_DATA, JSON.stringify(state));
+const kind = s => s === 'on' ? 'on' : s === 'busy' ? 'busy' : s === 'err' ? 'err' : '';
+function ensureDb(){
+  if(db) return db;
+  if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+  try{ db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); }catch(e){}   // 離線時的修改會排隊，連線後自動補傳
+  return db;
 }
-function setStatus(s){
-  syncStatus = s;
-  const d = $('.sync .dot'); if(d) d.className = 'dot ' + (s==='on'?'on':s==='busy'?'busy':s==='err'?'err':'');
-  const l = $('.sync span'); if(l) l.textContent = statusText();
+function groupStatusText(g){ return g.code ? ({ on: '已同步', busy: '同步中', err: '同步失敗', off: '未連線' }[gstat[g.id] || 'off']) : '未同步'; }
+function aggregate(){
+  const coded = state.groups.filter(g => g.code);
+  if(!configured() || !coded.length) return { k: '', t: '僅存本機' };
+  const st = coded.map(g => gstat[g.id] || 'off');
+  if(st.includes('err')) return { k: 'err', t: '同步失敗' };
+  if(st.includes('busy') || st.includes('off')) return { k: 'busy', t: '同步中…' };
+  return { k: 'on', t: '已同步' };
 }
-function startSync(){
-  if(unsub){ unsub(); unsub = null; }
-  docRef = null;
-  if(!configured() || !syncCode){ setStatus('off'); return; }
+function refreshBadges(){
+  const h = $('.sync.home');
+  if(h){ const a = aggregate(); h.querySelector('.dot').className = 'dot ' + a.k; h.querySelector('span').textContent = a.t; }
+  const gb = $('.sync.gsync'), g = view && group(view);
+  if(gb && g){ gb.querySelector('.dot').className = 'dot ' + kind(g.code ? gstat[g.id] : ''); gb.querySelector('span').textContent = groupStatusText(g); }
+}
+function setG(id, st){ gstat[id] = st; refreshBadges(); }
+function stopListen(id){
+  if(unsubs[id]){ unsubs[id](); delete unsubs[id]; }
+  clearTimeout(timers[id]); delete timers[id]; delete gstat[id];
+}
+function listen(g){
+  stopListen(g.id);
+  if(!configured() || !g.code) return;
   try{
-    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-    docRef = db.collection('checklists').doc(syncCode);
-    setStatus('busy');
-    unsub = docRef.onSnapshot(snap => {
+    const ref = ensureDb().collection('checklists').doc(g.code);
+    setG(g.id, 'busy');
+    unsubs[g.id] = ref.onSnapshot(snap => {
+      const cur = group(g.id); if(!cur || cur.code !== g.code) return;
       if(snap.metadata.hasPendingWrites) return;
-      if(!snap.exists){ pushNow(); return; }
-      const remote = snap.data();
-      let data; try{ data = JSON.parse(remote.json); }catch(e){ return; }
-      if((remote.updatedAt || 0) > (state.updatedAt || 0)){
-        state = { groups: data.groups || [], title: data.title || '', updatedAt: remote.updatedAt };
-        localStorage.setItem(LS_DATA, JSON.stringify(state));
-        if(view && !group(view)) view = null;
-        render();
-      } else if((remote.updatedAt || 0) < (state.updatedAt || 0)){
-        pushNow();
-      }
-      setStatus('on');
-    }, err => { console.error(err); setStatus('err'); });
-  }catch(e){ console.error(e); setStatus('err'); }
+      const cache = snap.metadata.fromCache;
+      if(!snap.exists){ if(!cache) pushNow(cur.id); return; }
+      const remote = snap.data(); let data;
+      try{ data = JSON.parse(remote.json); }catch(e){ setG(cur.id, 'err'); return; }
+      if(!data || !Array.isArray(data.items)){ setG(cur.id, 'err'); return; }
+      const ru = remote.updatedAt || 0, lu = cur.updatedAt || 0;
+      if(ru > lu){
+        cur.name = data.name || cur.name; cur.items = data.items; cur.updatedAt = ru; saveLocal();
+        if(!editing) render();
+      } else if(ru < lu && !cache){ pushNow(cur.id); return; }
+      if(!cache) setG(cur.id, 'on');
+    }, err => { console.error(err); setG(g.id, 'err'); });
+  }catch(e){ console.error(e); setG(g.id, 'err'); }
 }
-function pushSoon(){ if(!docRef) return; setStatus('busy'); clearTimeout(saveTimer); saveTimer = setTimeout(pushNow, 500); }
-function pushNow(){
-  if(!docRef) return;
-  docRef.set({ json: JSON.stringify({ groups: state.groups, title: state.title || '' }), updatedAt: state.updatedAt || Date.now() })
-    .then(() => setStatus('on')).catch(e => { console.error(e); setStatus('err'); });
+function pushSoon(g){
+  if(!g || !g.code || !configured()) return;
+  setG(g.id, 'busy');
+  clearTimeout(timers[g.id]);
+  timers[g.id] = setTimeout(() => pushNow(g.id), 500);
+}
+function pushNow(id){
+  clearTimeout(timers[id]); delete timers[id];
+  const g = group(id); if(!g || !g.code || !configured()) return;
+  if(!g.updatedAt){ g.updatedAt = Date.now(); saveLocal(); }
+  try{
+    ensureDb().collection('checklists').doc(g.code)
+      .set({ json: JSON.stringify({ name: g.name, items: g.items }), updatedAt: g.updatedAt })
+      .then(() => setG(id, 'on')).catch(e => { console.error(e); setG(id, 'err'); });
+  }catch(e){ console.error(e); setG(id, 'err'); }
+}
+/* 離開頁面或切到別的 App 時，把還沒送出的修改立刻送出 */
+function flushAll(){ Object.keys(timers).forEach(pushNow); }
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') flushAll(); });
+window.addEventListener('pagehide', flushAll);
+
+async function attachCode(g, code){
+  if(!configured()){ toast('尚未設定 Firebase'); return; }
+  if(state.groups.some(x => x.id !== g.id && x.code === code)){ toast('這個代碼已被另一個群組使用'); return; }
+  try{
+    const snap = await ensureDb().collection('checklists').doc(code).get();
+    const go = replace => {
+      stopListen(g.id); g.code = code;
+      g.updatedAt = replace ? 0 : (g.updatedAt || Date.now());
+      saveLocal(); listen(g); render(); toast('已開始同步');
+    };
+    if(!snap.exists){ go(false); return; }
+    let nm = '未命名', n = 0;
+    try{ const d = JSON.parse(snap.data().json); nm = d.name || nm; n = leaves({ items: d.items || [] }).length; }catch(e){}
+    openDialog((f, close) => {
+      f.append(el('h2', {}, '這個代碼已有資料'),
+        el('p', {}, `雲端已有群組「${nm}」（${n} 個項目）。連結後，目前這個群組的內容會被雲端內容取代。確定要連結嗎？`),
+        el('div', { class: 'acts' },
+          el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+          el('button', { class: 'btn warn', type: 'button', onclick: () => { close(); go(true); } }, '取代並連結')));
+    });
+  }catch(e){ console.error(e); toast('連線失敗，請檢查網路或 Firestore 設定'); }
+}
+function openJoin(){
+  openDialog((f, close) => {
+    f.append(el('h2', {}, '用同步代碼加入群組'));
+    if(!configured()){
+      f.append(el('p', {}, '尚未填入 Firebase 設定。'), el('div', { class: 'acts' }, el('button', { class: 'btn', type: 'button', onclick: close }, '知道了')));
+      return;
+    }
+    const code = el('input', { type: 'text', placeholder: '輸入同步代碼', autocapitalize: 'off', autocomplete: 'off', 'aria-label': '同步代碼' });
+    const go = async () => {
+      const c = cleanCode(code.value);
+      if(c.length < 6){ toast('同步代碼至少 6 個字元'); return; }
+      if(state.groups.some(x => x.code === c)){ toast('這個代碼的群組已在這台裝置上'); return; }
+      close();
+      try{
+        const snap = await ensureDb().collection('checklists').doc(c).get();
+        if(!snap.exists){ toast('找不到這個代碼。要建立新的同步群組，請先建立群組，再到群組內設定代碼'); return; }
+        let d; try{ d = JSON.parse(snap.data().json); }catch(e){}
+        if(!d || !Array.isArray(d.items)){ toast('這個代碼的資料格式不符'); return; }
+        const ng = { id: uid(), name: d.name || '同步群組', items: d.items, code: c, updatedAt: snap.data().updatedAt || Date.now() };
+        state.groups.push(ng); saveLocal(); listen(ng); render(); toast(`已加入「${ng.name}」`);
+      }catch(e){ console.error(e); toast('連線失敗，請檢查網路或 Firestore 設定'); }
+    };
+    enterTo(code, go);
+    f.append(el('p', {}, '輸入別人（或你另一台裝置）分享的同步代碼，就能看到並一起編輯那個群組。'), code,
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+        el('button', { class: 'btn', type: 'button', onclick: go }, '加入')));
+    setTimeout(() => code.focus(), 50);
+  });
 }
 
 /* ---------- 操作 ---------- */
 function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [] }); commit(); }
-function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; commit(); } }
-function deleteGroup(id){ state.groups = state.groups.filter(g => g.id !== id); view = null; commit(); }
+function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; commit(g); } }
+function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); view = null; commit(); }
 function addItems(key, raw, qtyRaw){
   const g = group(view); if(!g) return;
   const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
@@ -318,10 +406,13 @@ let lastTap = { k: null, t: 0 };
 function isDbl(k){ const now = Date.now(), r = lastTap.k === k && now - lastTap.t < 380; lastTap = { k, t: r ? 0 : now }; return r; }
 const blocked = () => Date.now() < suppressUntil;
 
-function syncBadge(){
-  return el('button', { class: 'sync', onclick: openSyncDialog, 'aria-label': '同步設定' },
-    el('i', { class: 'dot ' + (syncStatus==='on'?'on':syncStatus==='busy'?'busy':syncStatus==='err'?'err':'') }),
-    el('span', {}, statusText()));
+function homeBadge(){
+  const a = aggregate();
+  return el('span', { class: 'sync home', 'aria-label': '同步狀態' }, el('i', { class: 'dot ' + a.k }), el('span', {}, a.t));
+}
+function groupBadge(g){
+  return el('button', { class: 'sync gsync', onclick: () => openGroupMenu(g), 'aria-label': '同步設定' },
+    el('i', { class: 'dot ' + kind(g.code ? gstat[g.id] : '') }), el('span', {}, groupStatusText(g)));
 }
 
 function render(){
@@ -358,7 +449,7 @@ function openRename(g){
 }
 function deleteGroupFlow(g){
   const n = leaves(g).length;
-  askDelete(`刪除群組「${g.name}」？`, n ? `裡面有 ${n} 個項目，會一起刪除。` : '這個群組是空的。', () => {
+  askDelete(`刪除群組「${g.name}」？`, (n ? `裡面有 ${n} 個項目，會一起刪除。` : '這個群組是空的。') + (g.code ? ' 雲端上的資料不會被刪除，只是從這台裝置移除，之後仍可用同步代碼再加入。' : ''), () => {
     setTimeout(() => askDelete('再確認一次', `真的要刪除「${g.name}」嗎？刪除後無法復原。`, () => deleteGroup(g.id), '確定刪除'), 60);
   }, '繼續');
 }
@@ -376,11 +467,11 @@ function renderHome(app){
   }
   app.append(el('header', {}, ttl,
     el('button', { class: 'icon-btn', onclick: toggleHomeView, 'aria-label': homeView === 'list' ? '切換成圖卡顯示' : '切換成清單顯示' }, homeView === 'list' ? '▦' : '☰'),
-    syncBadge()));
+    homeBadge()));
   const input = el('input', { type: 'text', placeholder: '新增清單群組名稱', enterkeyhint: 'done', 'aria-label': '群組名稱' });
   const go = () => addGroup(input.value);
   input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); });
-  app.append(el('div', { class: 'add-group' }, input, el('button', { class: 'btn', onclick: go }, '建立')));
+  app.append(el('div', { class: 'add-group' }, input, el('button', { class: 'btn', onclick: go }, '建立'), el('button', { class: 'btn ghost', onclick: openJoin }, '加入')));
 
   const act = (cls, label, txt, fn) => el('button', { class: cls, 'aria-label': label, onclick: e => { e.stopPropagation(); fn(); } }, txt);
   if(homeView === 'cards'){
@@ -393,7 +484,7 @@ function renderHome(app){
         el('div', { class: 'wrap52' }, ico,
           act('badge l', '改名 ' + g.name, '✎', () => openRename(g)),
           act('badge r', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
-        el('span', { class: 'nm' }, g.name),
+        el('span', { class: 'nm' }, g.name + (g.code ? ' 🔗' : '')),
         el('span', { class: 'ct' }, total ? `${done}/${total}` : '')));
     });
     app.append(wrap);
@@ -401,7 +492,7 @@ function renderHome(app){
     state.groups.forEach(g => {
       const lv = leaves(g), done = lv.filter(i => i.done).length, total = lv.length;
       app.append(el('div', { class: 'group', role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
-        el('div', { class: 'top' }, el('span', { class: 'name' }, g.name), el('span', { class: 'cnt' }, `${done} / ${total}`),
+        el('div', { class: 'top' }, el('span', { class: 'name' }, g.name + (g.code ? ' 🔗' : '')), el('span', { class: 'cnt' }, `${done} / ${total}`),
           act('mini', '改名 ' + g.name, '✎', () => openRename(g)),
           act('mini del', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
         el('div', { class: 'bar' }, el('i', { style: `width:${total ? done/total*100 : 0}%` }))));
@@ -431,7 +522,7 @@ function renderGroup(app, g){
   if(editing && editing.id === '__title'){
     const inp = el('input', { type: 'text', class: 'title-in e-name', value: g.name, 'aria-label': '群組名稱' });
     title = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
-    bindEdit(title, [inp], () => { const v = inp.value.trim(); if(v) g.name = v; editing = null; commit(); }, stopEdit);
+    bindEdit(title, [inp], () => { const v = inp.value.trim(), gg = group(view); if(v && gg) gg.name = v; editing = null; commit(); }, stopEdit);
   } else {
     const startEdit = () => { editing = { id: '__title', field: 'text' }; render(); };
     title = el('h1', { title: '點兩下（手機：按住再放開）可修改名稱', onclick: () => { if(!blocked() && isDbl('__title')) startEdit(); } }, g.name);
@@ -439,7 +530,7 @@ function renderGroup(app, g){
   }
   app.append(el('header', {},
     el('button', { class: 'icon-btn', onclick: () => goto(null), 'aria-label': '返回' }, '‹'),
-    title,
+    title, groupBadge(g),
     el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯')));
 
   app.append(el('div', { class: 'toolbar' },
@@ -510,10 +601,13 @@ function itemRow(it, n){
       row.append(el('div', { class: 'mvline' }, '放在', where));
     }
     row._save = bindEdit(row, [name, qty], () => {
-      const v = name.value.trim(); if(v) it.text = v; it.qty = cleanQty(qty.value);
-      if(where && where.value !== curKey && cur){
-        const dest = where.value ? g.items.find(x => x.id === where.value)?.items : g.items;
-        if(dest){ cur.arr.splice(cur.arr.indexOf(it), 1); dest.push(it); if(where.value) addTarget = where.value; }
+      const g2 = group(view), c2 = g2 && find(g2, it.id);          // 重新查一次，避免剛好同步到別台裝置的更新
+      if(c2){
+        const v = name.value.trim(); if(v) c2.it.text = v; c2.it.qty = cleanQty(qty.value);
+        if(where && where.value !== curKey){
+          const dest = where.value ? g2.items.find(x => x.id === where.value)?.items : g2.items;
+          if(dest && dest !== c2.arr){ c2.arr.splice(c2.arr.indexOf(c2.it), 1); dest.push(c2.it); if(where.value) addTarget = where.value; }
+        }
       }
       editing = null; commit();
     }, stopEdit);
@@ -548,7 +642,7 @@ function subBlock(s, n){
     const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
     head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num' }, n + '.'), name,
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => head._save() }, '✓'));
-    head._save = bindEdit(head, [name], () => { const v = name.value.trim(); if(v) s.name = v; editing = null; commit(); }, stopEdit);
+    head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); if(v && c2) c2.it.name = v; editing = null; commit(); }, stopEdit);
   } else {
     const dn = s.items.filter(i => i.done).length;
     head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
@@ -721,37 +815,32 @@ function askDelete(title, msg, onOk, okLabel = '刪除'){
 function openGroupMenu(g){
   openDialog((f, close) => {
     const name = el('input', { type: 'text', value: g.name, 'aria-label': '群組名稱' });
-    const save = () => { renameGroup(g.id, name.value); close(); };
-    enterTo(name, save);
-    f.append(el('h2', {}, '群組選項'), el('p', {}, '修改群組名稱（也可以在標題上點兩下）'), name,
+    const code = el('input', { type: 'text', value: g.code || '', placeholder: '沒填 = 只存在這台裝置', autocapitalize: 'off', autocomplete: 'off', 'aria-label': '同步代碼' });
+    const save = () => {
+      const c = cleanCode(code.value);
+      if(c && c.length < 6){ toast('同步代碼至少 6 個字元'); return; }
+      if(c && !configured()){ toast('尚未設定 Firebase'); return; }
+      close();
+      renameGroup(g.id, name.value);
+      if(c !== (g.code || '')){
+        if(!c){ stopListen(g.id); g.code = ''; saveLocal(); render(); toast('已停止同步，雲端資料仍保留'); }
+        else attachCode(g, c);
+      }
+    };
+    enterTo(name, save); enterTo(code, save);
+    f.append(el('h2', {}, '群組選項'),
+      el('p', {}, '群組名稱（也可以在標題上點兩下）'), name,
+      el('p', {}, '同步代碼：使用相同代碼的裝置會共用這個群組。每個群組要用不同的代碼；只想自己看的，就用只有你知道的代碼。至少 6 個字元。'), code,
       el('div', { class: 'acts' },
         el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, '刪除群組'),
         el('button', { class: 'btn', type: 'button', onclick: save }, '儲存')));
   });
 }
-function openSyncDialog(){
-  openDialog((f, close) => {
-    f.append(el('h2', {}, '同步設定'));
-    if(!configured()){
-      f.append(el('p', {}, '尚未填入 Firebase 設定，目前資料只存在這個瀏覽器。完成設定後，這裡就能輸入同步代碼。'),
-        el('div', { class: 'acts' }, el('button', { class: 'btn', type: 'button', onclick: close }, '知道了')));
-      return;
-    }
-    const code = el('input', { type: 'text', value: syncCode, placeholder: '例如：family-2026', autocapitalize: 'off', 'aria-label': '同步代碼' });
-    enterTo(code, () => code.nextElementSibling?.querySelector('.btn:not(.ghost)')?.click());
-    f.append(el('p', {}, '所有裝置輸入相同的同步代碼，就會看到同一份清單。請用不容易被猜到的代碼。'), code,
-      el('div', { class: 'acts' },
-        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
-        el('button', { class: 'btn', type: 'button', onclick: () => {
-          const c = code.value.trim().replace(/[\/\s]/g, '');
-          syncCode = c; localStorage.setItem(LS_CODE, c); close(); startSync(); render(); toast(c ? '已套用同步代碼' : '已停止同步');
-        } }, '儲存')));
-  });
-}
-let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800); }
+let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), Math.max(1800, m.length * 160)); }
 
+localStorage.removeItem(LS_CODE);
 render();
-startSync();
+state.groups.forEach(g => { if(g.code) listen(g); });
 </script>
 </body>
 </html>
