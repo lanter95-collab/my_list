@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>我的清單</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef2f5; --surface:#ffffff; --surface2:#f4f7f9; --ink:#1d2b36; --muted:#6b7c89; --line:#d9e1e7;
+  --accent:#1f6f8b; --accent-ink:#ffffff; --done:#9aa8b2; --danger:#c0392b; --tick:#2e9e6b;
+  --sub:#dcf1e3; --sub-soft:#f1faf4; --sub-line:#7cc596;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#10171c; --surface:#18222a; --surface2:#1d2a33; --ink:#e6edf2; --muted:#8a9aa6; --line:#2a3842; --accent:#4fb0cf; --accent-ink:#0c1a21; --done:#5d6e7a; --danger:#ff7a6b; --tick:#43c48a; --sub:#1e3d2e; --sub-soft:#172a21; --sub-line:#3f8f64;}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;line-height:1.5;
+  touch-action:manipulation;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+body.dragging{user-select:none;-webkit-user-select:none;cursor:grabbing}
+.wrap{max-width:600px;margin:0 auto;padding:16px 16px 150px}
+header{display:flex;align-items:center;gap:10px;margin:8px 0 14px}
+header h1{font-size:22px;margin:0;flex:1;font-weight:700;letter-spacing:.02em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.icon-btn{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:40px;height:40px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+.icon-btn:focus-visible,.btn:focus-visible,input:focus-visible,.row:focus-visible,.mini:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:0 14px;height:44px;font-weight:500;white-space:nowrap;flex:none}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--line)}
+.btn.warn{background:var(--danger);color:#fff}
+.sync{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;background:none;border:0;padding:4px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--done)}
+.dot.on{background:var(--tick)} .dot.busy{background:#e0a528} .dot.err{background:var(--danger)}
+input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 12px;height:44px;flex:1;min-width:0;user-select:text;-webkit-user-select:text}
+.title-in{font-size:20px;font-weight:700;flex:1}
+
+/* home */
+.group{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.group{cursor:pointer}
+.group .top{display:flex;justify-content:space-between;align-items:center;gap:4px}
+.group .name{flex:1;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:18px 6px;margin-bottom:12px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:6px 0}
+.tile .wrap52{position:relative;width:52px;height:52px}
+.tile .ico{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;position:relative;overflow:hidden}
+.tile .ico i{position:absolute;left:0;bottom:0;height:4px;background:rgba(255,255,255,.9)}
+.tile .nm{font-size:12px;text-align:center;max-width:78px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;line-height:1.3}
+.tile .ct{font-size:11px;color:var(--muted);margin-top:-3px}
+.badge{position:absolute;top:-8px;width:22px;height:22px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.badge::after{content:"";position:absolute;inset:-6px}
+.badge.l{left:-8px}.badge.r{right:-8px}
+.group .name{font-weight:700;font-size:17px;overflow-wrap:anywhere}
+.group .cnt{color:var(--muted);font-size:14px;white-space:nowrap}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--tick);width:0;transition:width .25s}
+.add-group{display:flex;gap:8px;margin:0 0 14px}
+.empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:14px;margin-bottom:12px}
+
+/* toolbar */
+.toolbar{display:flex;align-items:center;gap:12px;margin:0 2px 10px;min-height:40px}
+.master{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 14px 0 10px;height:40px}
+.toolbar .sum{color:var(--muted);font-size:14px;margin-left:auto}
+
+/* list */
+.list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:0 2px 0 12px;min-height:52px;border-bottom:1px solid var(--line);cursor:pointer;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;background:var(--surface)}
+.list>.row:last-child,.children>.row:last-child{border-bottom:0}
+.box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s;background:transparent;padding:0}
+.box svg{width:16px;height:16px;stroke:#fff;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:all .12s}
+.on>.box,.box.on{background:var(--tick);border-color:var(--tick)}
+.on>.box svg,.box.on svg{opacity:1;transform:scale(1)}
+.num{flex:none;color:var(--muted);font-size:14px;min-width:1.8em;text-align:right;font-variant-numeric:tabular-nums}
+.txt{flex:1;padding:12px 0;overflow-wrap:anywhere;min-width:0}
+.qty{flex:none;min-width:3.4em;text-align:right;color:var(--muted);padding:12px 4px;font-variant-numeric:tabular-nums}
+.row.done .txt{color:var(--done);text-decoration:line-through}
+.row.done .qty{color:var(--done)}
+.mini{flex:none;background:none;border:0;color:var(--muted);width:38px;height:44px;font-size:15px;border-radius:10px;opacity:.55;padding:0}
+.mini:hover{opacity:1}
+.del{font-size:17px}
+.sub{border-bottom:1px solid var(--line)}
+.list>.sub:last-child{border-bottom:0}
+.subhead{background:var(--sub);font-weight:500}
+.subhead .cnt{flex:none;color:var(--muted);font-size:13px;font-weight:400}
+.children{margin-left:18px;border-left:3px solid var(--sub-line);background:var(--sub-soft)}
+.children:empty{border-left:0}
+.children .row{padding-left:8px;background:transparent}
+.grip{flex:none;width:28px;height:44px;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;opacity:.5}
+.grip::before{content:"";display:block;width:10px;height:18px;background:radial-gradient(circle,var(--muted) 1.5px,transparent 1.9px) 0 0/5px 6px}
+.grip:hover{opacity:1}
+body.drag-item .children{min-height:40px}
+.sub.hot>.subhead{outline:2px solid var(--tick);outline-offset:-2px}
+.sub.hot>.children{background:var(--sub)}
+.mvline{flex:1 1 100%;display:flex;align-items:center;gap:8px;padding-left:38px;font-size:14px;color:var(--muted)}
+.mvline select{flex:1;min-width:0;height:38px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.addform{display:flex;gap:8px;align-items:center}
+.addform input{height:40px}
+.a-qty,.e-qty{flex:none!important;width:62px;text-align:center;min-width:0}
+.e-qty{width:62px}
+.addform .btn{height:40px;padding:0 12px;font-size:14px}
+.row.editing{flex-wrap:wrap;cursor:default;gap:8px;padding:6px 8px 6px 12px;user-select:text;-webkit-user-select:text}
+.row.editing input{height:40px}
+.ok{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;width:40px;height:40px;font-size:18px;flex:none}
+.addbar{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0))}
+.addbar .in{max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.ctl,.line{display:flex;gap:8px;align-items:center}
+.ctl select{flex:1;min-width:0;height:40px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.ctl .btn,.line .btn{height:40px;padding:0 14px;font-size:15px}
+.btn.mode{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn.mode.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.line input[type=text]{height:44px}
+.line .a-qty{height:44px}
+.line .btn{height:44px}
+.btn[disabled]{opacity:.4}
+@media (min-width:700px){.addbar .in{flex-direction:row;align-items:center}.addbar .ctl{flex:none;width:280px}.addbar .line{flex:1}}
+
+/* drag */
+.placeholder{opacity:.35;background:var(--surface2)}
+.ghost{position:fixed;z-index:60;pointer-events:none;background:var(--surface);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.28);opacity:.96;overflow:hidden}
+
+dialog{border:0;border-radius:16px;background:var(--surface);color:var(--ink);padding:20px;width:min(92vw,420px)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin:0 0 8px;font-size:18px}
+dialog p{margin:6px 0 12px;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+dialog .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+dialog input{width:100%}
+.hide{display:none!important}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* ============ Firebase 設定（之後貼上你的設定） ============ */
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
+};
+/* =========================================================== */
+
+const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const $ = s => document.querySelector(s);
+
+/* 資料結構
+   state.groups = [{ id, name, items:[ 項目 或 小群組 ] }]
+   項目   = { id, text, qty, done }
+   小群組 = { id, name, items:[項目...], collapsed, done }   (有 items 陣列就是小群組)  */
+let state = load();
+let view = null;                 // 目前開啟的大群組 id
+let editing = null;              // { id, field:'text'|'qty' }，id='__title' 代表群組標題
+let refocus = false, undoSnap = null, pendingRender = false;
+let addTarget = '';
+let homeView = localStorage.getItem('mylists-homeview') || 'list';
+let db = null, docRef = null, unsub = null, saveTimer = null;
+let syncStatus = 'off', syncCode = localStorage.getItem(LS_CODE) || '';
+
+function load(){
+  try{ const d = JSON.parse(localStorage.getItem(LS_DATA)); if(d && Array.isArray(d.groups)) return d; }catch(e){}
+  return { groups: [], updatedAt: 0 };
+}
+function commit(){
+  state.updatedAt = Date.now();
+  localStorage.setItem(LS_DATA, JSON.stringify(state));
+  render();
+  pushSoon();
+}
+const group = id => state.groups.find(g => g.id === id);
+const appTitle = () => state.title || '我的清單';
+/* 手機：按住標題、放開後進入修改（和電腦的「點兩下」並存） */
+function longPress(node, fn, ms = 450){
+  let t = null, armed = false, sx = 0, sy = 0;
+  const clear = () => { clearTimeout(t); t = null; armed = false; };
+  node.addEventListener('pointerdown', e => {
+    if(e.pointerType === 'mouse') return;
+    sx = e.clientX; sy = e.clientY; armed = false;
+    t = setTimeout(() => { armed = true; if(navigator.vibrate) navigator.vibrate(10); }, ms);
+  });
+  node.addEventListener('pointermove', e => { if((t || armed) && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clear(); });
+  node.addEventListener('pointerup', () => { const go = armed; clear(); if(go){ suppressUntil = Date.now() + 500; fn(); } });
+  node.addEventListener('pointercancel', clear);
+  node.addEventListener('contextmenu', e => e.preventDefault());
+}
+const isSub = it => Array.isArray(it.items);
+const subDone = s => s.items.length ? s.items.every(i => i.done) : !!s.done;
+function leaves(g){
+  const out = [];
+  g.items.forEach(it => { if(isSub(it)){ if(it.items.length) out.push(...it.items); else out.push(it); } else out.push(it); });
+  return out;
+}
+function find(g, id){
+  for(const it of g.items){
+    if(it.id === id) return { it, arr: g.items };
+    if(isSub(it)){ const c = it.items.find(x => x.id === id); if(c) return { it: c, arr: it.items }; }
+  }
+  return null;
+}
+const cleanQty = v => { const s = String(v ?? '').replace(/\D/g, '').slice(0, 5); return s === '' ? '' : Number(s); };
+
+/* ---------- 同步 ---------- */
+const configured = () => !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+function statusText(){
+  if(!configured()) return '僅存本機';
+  if(!syncCode) return '尚未設定同步代碼';
+  return {on:'已同步', busy:'同步中…', err:'同步失敗', off:'未連線'}[syncStatus];
+}
+function setStatus(s){
+  syncStatus = s;
+  const d = $('.sync .dot'); if(d) d.className = 'dot ' + (s==='on'?'on':s==='busy'?'busy':s==='err'?'err':'');
+  const l = $('.sync span'); if(l) l.textContent = statusText();
+}
+function startSync(){
+  if(unsub){ unsub(); unsub = null; }
+  docRef = null;
+  if(!configured() || !syncCode){ setStatus('off'); return; }
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    docRef = db.collection('checklists').doc(syncCode);
+    setStatus('busy');
+    unsub = docRef.onSnapshot(snap => {
+      if(snap.metadata.hasPendingWrites) return;
+      if(!snap.exists){ pushNow(); return; }
+      const remote = snap.data();
+      let data; try{ data = JSON.parse(remote.json); }catch(e){ return; }
+      if((remote.updatedAt || 0) > (state.updatedAt || 0)){
+        state = { groups: data.groups || [], title: data.title || '', updatedAt: remote.updatedAt };
+        localStorage.setItem(LS_DATA, JSON.stringify(state));
+        if(view && !group(view)) view = null;
+        render();
+      } else if((remote.updatedAt || 0) < (state.updatedAt || 0)){
+        pushNow();
+      }
+      setStatus('on');
+    }, err => { console.error(err); setStatus('err'); });
+  }catch(e){ console.error(e); setStatus('err'); }
+}
+function pushSoon(){ if(!docRef) return; setStatus('busy'); clearTimeout(saveTimer); saveTimer = setTimeout(pushNow, 500); }
+function pushNow(){
+  if(!docRef) return;
+  docRef.set({ json: JSON.stringify({ groups: state.groups, title: state.title || '' }), updatedAt: state.updatedAt || Date.now() })
+    .then(() => setStatus('on')).catch(e => { console.error(e); setStatus('err'); });
+}
+
+/* ---------- 操作 ---------- */
+function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [] }); commit(); }
+function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; commit(); } }
+function deleteGroup(id){ state.groups = state.groups.filter(g => g.id !== id); view = null; commit(); }
+function addItems(key, raw, qtyRaw){
+  const g = group(view); if(!g) return;
+  const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
+  if(!target) return;
+  const names = raw.split(/\n|、|，|,/).map(s => s.trim()).filter(Boolean);
+  if(!names.length) return;
+  const q = names.length === 1 ? cleanQty(qtyRaw) : '';
+  names.forEach(t => target.push({ id: uid(), text: t, qty: q, done: false }));
+  commit();
+}
+function addSub(name){
+  const g = group(view); name = name.trim(); if(!g || !name) return;
+  const sub = { id: uid(), name, items: [], collapsed: false, done: false };
+  g.items.push(sub); addTarget = sub.id; refocus = true;
+  toast(`已建立「${name}」，接著新增的項目會放進去`);
+  commit();
+}
+function toggleItem(id){ const r = find(group(view), id); if(r){ r.it.done = !r.it.done; commit(); } }
+function toggleSub(id){
+  const r = find(group(view), id); if(!r) return;
+  const s = r.it;
+  undoSnap = { id, kids: s.items.map(i => i.done), own: s.done };
+  if(s.items.length){ const v = !s.items.every(i => i.done); s.items.forEach(i => i.done = v); }
+  else s.done = !s.done;
+  commit();
+}
+function undoSub(id){
+  const r = find(group(view), id); if(!r || !undoSnap || undoSnap.id !== id) return;
+  r.it.items.forEach((i, k) => { if(k in undoSnap.kids) i.done = undoSnap.kids[k]; });
+  r.it.done = undoSnap.own;
+}
+function setAll(v){ const g = group(view); if(g){ leaves(g).forEach(i => i.done = v); commit(); } }
+function removeById(id){
+  const g = group(view); const r = find(g, id);
+  if(r){ r.arr.splice(r.arr.indexOf(r.it), 1); commit(); }
+}
+function toggleFold(id){ const r = find(group(view), id); if(r){ r.it.collapsed = !r.it.collapsed; commit(); } }
+
+/* ---------- 畫面 ---------- */
+function el(tag, attrs = {}, ...kids){
+  const e = document.createElement(tag);
+  for(const [k, v] of Object.entries(attrs)){
+    if(k === 'class') e.className = v;
+    else if(k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if(v !== false && v != null) e.setAttribute(k, v);
+  }
+  kids.flat().forEach(k => e.append(k instanceof Node ? k : document.createTextNode(k)));
+  return e;
+}
+function checkBox(on){
+  const b = el('span', { class: 'box' + (on ? ' on' : '') });
+  b.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="5 12.5 10 17.5 19 7"/></svg>';
+  return b;
+}
+let lastTap = { k: null, t: 0 };
+function isDbl(k){ const now = Date.now(), r = lastTap.k === k && now - lastTap.t < 380; lastTap = { k, t: r ? 0 : now }; return r; }
+const blocked = () => Date.now() < suppressUntil;
+
+function syncBadge(){
+  return el('button', { class: 'sync', onclick: openSyncDialog, 'aria-label': '同步設定' },
+    el('i', { class: 'dot ' + (syncStatus==='on'?'on':syncStatus==='busy'?'busy':syncStatus==='err'?'err':'') }),
+    el('span', {}, statusText()));
+}
+
+function render(){
+  if(drag){ pendingRender = true; return; }
+  const app = $('#app'), y = window.scrollY;
+  document.title = appTitle();
+  app.innerHTML = '';
+  document.querySelectorAll('.addbar').forEach(n => n.remove());
+  if(view && group(view)) renderGroup(app, group(view)); else { view = null; renderHome(app); }
+  window.scrollTo(0, y);
+  if(editing){
+    const inp = document.querySelector(editing.field === 'qty' ? '.e-qty' : '.e-name');
+    if(inp){ inp.focus(); try{ inp.select(); }catch(e){} }
+  } else if(refocus){
+    const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
+  }
+  refocus = false;
+}
+function goto(id){ view = id; editing = null; addTarget = ''; render(); window.scrollTo(0, 0); }
+
+function hue(id){ let h = 0; for(const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+function toggleHomeView(){ homeView = homeView === 'list' ? 'cards' : 'list'; localStorage.setItem('mylists-homeview', homeView); render(); }
+function openRename(g){
+  openDialog((f, close) => {
+    const name = el('input', { type: 'text', value: g.name, 'aria-label': '群組名稱' });
+    const save = () => { renameGroup(g.id, name.value); close(); };
+    enterTo(name, save);
+    f.append(el('h2', {}, '修改群組名稱'), name,
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+        el('button', { class: 'btn', type: 'button', onclick: save }, '儲存')));
+    setTimeout(() => { name.focus(); name.select(); }, 50);
+  });
+}
+function deleteGroupFlow(g){
+  const n = leaves(g).length;
+  askDelete(`刪除群組「${g.name}」？`, n ? `裡面有 ${n} 個項目，會一起刪除。` : '這個群組是空的。', () => {
+    setTimeout(() => askDelete('再確認一次', `真的要刪除「${g.name}」嗎？刪除後無法復原。`, () => deleteGroup(g.id), '確定刪除'), 60);
+  }, '繼續');
+}
+
+function renderHome(app){
+  let ttl;
+  if(editing && editing.id === '__apptitle'){
+    const inp = el('input', { type: 'text', class: 'title-in e-name', value: appTitle(), 'aria-label': '標題' });
+    ttl = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
+    bindEdit(ttl, [inp], () => { state.title = inp.value.trim(); editing = null; commit(); }, stopEdit);
+  } else {
+    const startEdit = () => { editing = { id: '__apptitle', field: 'text' }; render(); };
+    ttl = el('h1', { title: '點兩下（手機：按住再放開）可修改標題', onclick: () => { if(!blocked() && isDbl('__apptitle')) startEdit(); } }, appTitle());
+    longPress(ttl, startEdit);
+  }
+  app.append(el('header', {}, ttl,
+    el('button', { class: 'icon-btn', onclick: toggleHomeView, 'aria-label': homeView === 'list' ? '切換成圖卡顯示' : '切換成清單顯示' }, homeView === 'list' ? '▦' : '☰'),
+    syncBadge()));
+  const input = el('input', { type: 'text', placeholder: '新增清單群組名稱', enterkeyhint: 'done', 'aria-label': '群組名稱' });
+  const go = () => addGroup(input.value);
+  input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); });
+  app.append(el('div', { class: 'add-group' }, input, el('button', { class: 'btn', onclick: go }, '建立')));
+
+  const act = (cls, label, txt, fn) => el('button', { class: cls, 'aria-label': label, onclick: e => { e.stopPropagation(); fn(); } }, txt);
+  if(homeView === 'cards'){
+    const wrap = el('div', { class: 'tiles' });
+    state.groups.forEach(g => {
+      const lv = leaves(g), done = lv.filter(i => i.done).length, total = lv.length;
+      const first = Array.from(g.name)[0] || '?';
+      const ico = el('div', { class: 'ico', style: `background:hsl(${hue(g.id)} 45% 42%)` }, first, el('i', { style: `width:${total ? done/total*100 : 0}%` }));
+      wrap.append(el('div', { class: 'tile', role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
+        el('div', { class: 'wrap52' }, ico,
+          act('badge l', '改名 ' + g.name, '✎', () => openRename(g)),
+          act('badge r', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
+        el('span', { class: 'nm' }, g.name),
+        el('span', { class: 'ct' }, total ? `${done}/${total}` : '')));
+    });
+    app.append(wrap);
+  } else {
+    state.groups.forEach(g => {
+      const lv = leaves(g), done = lv.filter(i => i.done).length, total = lv.length;
+      app.append(el('div', { class: 'group', role: 'button', tabindex: '0', onclick: () => goto(g.id), onkeydown: e => { if(e.key === 'Enter') goto(g.id); } },
+        el('div', { class: 'top' }, el('span', { class: 'name' }, g.name), el('span', { class: 'cnt' }, `${done} / ${total}`),
+          act('mini', '改名 ' + g.name, '✎', () => openRename(g)),
+          act('mini del', '刪除 ' + g.name, '−', () => deleteGroupFlow(g))),
+        el('div', { class: 'bar' }, el('i', { style: `width:${total ? done/total*100 : 0}%` }))));
+    });
+  }
+}
+
+/* 編輯輸入共用：Enter 存、Esc 取消、點別處自動存 */
+function bindEdit(root, inputs, save, cancel){
+  let fin = false;
+  const doSave = () => { if(fin) return; fin = true; save(); };
+  const doCancel = () => { if(fin) return; fin = true; cancel(); };
+  inputs.forEach(i => i.addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); doSave(); }
+    else if(e.key === 'Escape'){ doCancel(); }
+  }));
+  root.addEventListener('focusout', () => setTimeout(() => { if(!root.contains(document.activeElement)) doSave(); }, 0));
+  return doSave;
+}
+const stopEdit = () => { editing = null; render(); };
+
+function renderGroup(app, g){
+  const lv = leaves(g), done = lv.filter(i => i.done).length, all = lv.length > 0 && done === lv.length;
+
+  /* 標題：點兩下修改 */
+  let title;
+  if(editing && editing.id === '__title'){
+    const inp = el('input', { type: 'text', class: 'title-in e-name', value: g.name, 'aria-label': '群組名稱' });
+    title = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
+    bindEdit(title, [inp], () => { const v = inp.value.trim(); if(v) g.name = v; editing = null; commit(); }, stopEdit);
+  } else {
+    const startEdit = () => { editing = { id: '__title', field: 'text' }; render(); };
+    title = el('h1', { title: '點兩下（手機：按住再放開）可修改名稱', onclick: () => { if(!blocked() && isDbl('__title')) startEdit(); } }, g.name);
+    longPress(title, startEdit);
+  }
+  app.append(el('header', {},
+    el('button', { class: 'icon-btn', onclick: () => goto(null), 'aria-label': '返回' }, '‹'),
+    title,
+    el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯')));
+
+  app.append(el('div', { class: 'toolbar' },
+    el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all) }, checkBox(all), all ? '全部取消' : '全選'),
+    el('span', { class: 'sum' }, lv.length ? `已完成 ${done} / ${lv.length}` : '')));
+
+  if(!g.items.length){
+    app.append(el('div', { class: 'empty' }, '還沒有項目。在下方輸入內容按「新增」，要分類就先按「小群組」。'));
+  } else {
+    const list = el('div', { class: 'list', 'data-container': 'root' });
+    g.items.forEach((it, i) => list.append(isSub(it) ? subBlock(it, i + 1) : itemRow(it, i + 1)));
+    app.append(list);
+  }
+  document.body.append(buildAddBar(g));
+}
+
+function buildAddBar(g){
+  const subs = g.items.filter(isSub);
+  if(!subs.some(s => s.id === addTarget)) addTarget = '';
+  let subMode = false;
+  const sel = subs.length ? el('select', { class: 'a-sel', 'aria-label': '放入哪個小群組' },
+    el('option', { value: '' }, '最上層（不放進小群組）'), subs.map(s => el('option', { value: s.id }, s.name))) : null;
+  if(sel) sel.value = addTarget;
+  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false' }, '小群組');
+  const name = el('input', { type: 'text', class: 'a-name', enterkeyhint: 'done' });
+  const qty = el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' });
+  const ok = el('button', { class: 'btn', type: 'button' }, '新增');
+  const subName = () => subs.find(s => s.id === addTarget)?.name;
+  function paint(){
+    modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
+    qty.classList.toggle('hide', subMode);
+    if(sel) sel.disabled = subMode;
+    ok.textContent = subMode ? '建立' : '新增';
+    const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
+    name.placeholder = ph; name.setAttribute('aria-label', ph);
+  }
+  const go = () => {
+    const v = name.value; if(!v.trim()) return;
+    if(subMode) addSub(v); else { refocus = true; addItems(addTarget || 'root', v, qty.value); }
+  };
+  modeBtn.addEventListener('click', () => { subMode = !subMode; paint(); name.focus(); });
+  if(sel) sel.addEventListener('change', () => { addTarget = sel.value; paint(); });
+  ok.addEventListener('click', go);
+  [name, qty].forEach(i => i.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); }));
+  name.addEventListener('paste', e => {
+    if(subMode) return;
+    const t = (e.clipboardData || window.clipboardData).getData('text');
+    if(t.includes('\n')){ e.preventDefault(); refocus = true; addItems(addTarget || 'root', t, ''); }
+  });
+  paint();
+  return el('div', { class: 'addbar' }, el('div', { class: 'in' },
+    el('div', { class: 'ctl' }, sel || '', modeBtn),
+    el('div', { class: 'line' }, name, qty, ok)));
+}
+
+function itemRow(it, n){
+  if(editing && editing.id === it.id){
+    const name = el('input', { type: 'text', class: 'e-name', value: it.text, 'aria-label': '項目名稱' });
+    const qty = el('input', { type: 'text', class: 'e-qty', inputmode: 'numeric', value: it.qty === '' || it.qty == null ? '' : String(it.qty), placeholder: '數量', 'aria-label': '數量' });
+    const row = el('div', { class: 'row editing', 'data-unit': it.id }, el('span', { class: 'num' }, n + '.'), name, qty,
+      el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => row._save() }, '✓'));
+    const g = group(view), cur = find(g, it.id), subs = g.items.filter(isSub);
+    const curKey = cur && cur.arr !== g.items ? g.items.find(x => isSub(x) && x.items === cur.arr)?.id || '' : '';
+    let where = null;
+    if(subs.length){
+      where = el('select', { 'aria-label': '放在哪個小群組' }, el('option', { value: '' }, '最上層（不在小群組）'), subs.map(x => el('option', { value: x.id }, x.name)));
+      where.value = curKey;
+      row.append(el('div', { class: 'mvline' }, '放在', where));
+    }
+    row._save = bindEdit(row, [name, qty], () => {
+      const v = name.value.trim(); if(v) it.text = v; it.qty = cleanQty(qty.value);
+      if(where && where.value !== curKey && cur){
+        const dest = where.value ? g.items.find(x => x.id === where.value)?.items : g.items;
+        if(dest){ cur.arr.splice(cur.arr.indexOf(it), 1); dest.push(it); if(where.value) addTarget = where.value; }
+      }
+      editing = null; commit();
+    }, stopEdit);
+    return row;
+  }
+  const row = el('div', { class: 'row' + (it.done ? ' done on' : ''), 'data-unit': it.id, role: 'checkbox', 'aria-checked': String(!!it.done), tabindex: '0' },
+    checkBox(it.done),
+    el('span', { class: 'num' }, n + '.'),
+    el('span', { class: 'txt' }, it.text),
+    el('span', { class: 'qty' }, it.qty ? '×' + it.qty : ''),
+    el('span', { class: 'grip', title: '按住拖曳', 'aria-hidden': 'true' }),
+    el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
+  row.addEventListener('click', e => {
+    if(blocked() || e.target.closest('.del')) return;
+    const t = e.target.closest('.txt,.qty');
+    if(t && isDbl(it.id)){               // 雙擊：還原第一下的勾選，進入編輯
+      it.done = !it.done;
+      editing = { id: it.id, field: t.classList.contains('qty') ? 'qty' : 'text' };
+      commit(); return;
+    }
+    toggleItem(it.id);
+  });
+  row.addEventListener('keydown', e => { if((e.key === ' ' || e.key === 'Enter') && e.target === row){ e.preventDefault(); row.click(); } });
+  return row;
+}
+
+function subBlock(s, n){
+  const done = subDone(s);
+  const block = el('div', { class: 'sub', 'data-unit': s.id });
+  let head;
+  if(editing && editing.id === s.id){
+    const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
+    head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num' }, n + '.'), name,
+      el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => head._save() }, '✓'));
+    head._save = bindEdit(head, [name], () => { const v = name.value.trim(); if(v) s.name = v; editing = null; commit(); }, stopEdit);
+  } else {
+    const dn = s.items.filter(i => i.done).length;
+    head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
+      checkBox(done),
+      el('span', { class: 'num' }, n + '.'),
+      el('span', { class: 'txt' }, s.name),
+      el('span', { class: 'cnt' }, s.items.length ? `${dn}/${s.items.length}` : ''),
+      el('span', { class: 'grip', title: '按住拖曳', 'aria-hidden': 'true' }),
+      el('button', { class: 'mini fold', 'aria-label': s.collapsed ? '展開' : '收合', onclick: e => { e.stopPropagation(); if(!blocked()) toggleFold(s.id); } }, s.collapsed ? '▸' : '▾'),
+      el('button', { class: 'mini del', 'aria-label': '刪除小群組 ' + s.name, onclick: e => { e.stopPropagation(); if(blocked()) return;
+        askDelete(`刪除小群組「${s.name}」？`, s.items.length ? `裡面的 ${s.items.length} 個項目也會一起刪除，無法復原。` : '刪除後無法復原。', () => removeById(s.id)); } }, '−'));
+    head.addEventListener('click', e => {
+      if(blocked() || e.target.closest('.mini')) return;
+      if(e.target.closest('.txt') && isDbl(s.id)){
+        undoSub(s.id); editing = { id: s.id, field: 'text' }; commit(); return;
+      }
+      toggleSub(s.id);
+    });
+  }
+  block.append(head);
+  if(!s.collapsed){
+    const ch = el('div', { class: 'children', 'data-container': s.id });
+    s.items.forEach((it, i) => ch.append(itemRow(it, i + 1)));
+    block.append(ch);
+  }
+  return block;
+}
+
+/* ---------- 拖曳（排序 / 拖進小群組 / 拉出小群組） ---------- */
+let press = null, drag = null, suppressUntil = 0;
+const HOLD_MS = 380;
+
+document.addEventListener('contextmenu', e => { if(e.target.closest('.row:not(.editing)')) e.preventDefault(); });
+document.addEventListener('selectstart', e => { if(press || drag) e.preventDefault(); });
+document.addEventListener('touchmove', e => { if(drag) e.preventDefault(); }, { passive: false });
+
+document.addEventListener('pointerdown', e => {
+  if(!view || drag) return;
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  const grip = e.target.closest('.grip');
+  if(!grip && e.target.closest('input,select,button,textarea')) return;
+  const unit = e.target.closest('[data-unit]');
+  if(!unit || unit.classList.contains('editing') || unit.querySelector(':scope > .editing')) return;
+  const list = unit.parentElement;
+  if(!list || !list.dataset.container) return;
+  press = { unit, x: e.clientX, y: e.clientY, id: e.pointerId, touch: e.pointerType !== 'mouse' && !grip, timer: null,
+    field: e.target.closest('.qty') ? 'qty' : 'text', onText: !!e.target.closest('.txt,.qty') };
+  if(press.touch) press.timer = setTimeout(() => { if(press) startDrag(press.x, press.y); }, HOLD_MS);
+});
+document.addEventListener('pointermove', e => {
+  if(drag){ if(e.pointerId === drag.pid) moveDrag(e.clientX, e.clientY); return; }
+  if(!press || e.pointerId !== press.id) return;
+  const dist = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+  if(press.touch){
+    if(dist > 10){ clearTimeout(press.timer); press = null; }     // 手指移動 = 想捲動頁面
+  } else if(dist > 4){ startDrag(press.x, press.y); moveDrag(e.clientX, e.clientY); }
+});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, e => {
+  if(drag){ endDrag(); return; }
+  if(press && e.pointerId === press.id){ clearTimeout(press.timer); press = null; }
+}));
+
+function startDrag(x, y){
+  const p = press; clearTimeout(p.timer); press = null;
+  const rect = p.unit.getBoundingClientRect();
+  const ghost = p.unit.cloneNode(true);
+  ghost.classList.add('ghost');
+  Object.assign(ghost.style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px' });
+  document.body.append(ghost);
+  p.unit.classList.add('placeholder');
+  document.body.classList.add('dragging');
+  const isSubUnit = p.unit.classList.contains('sub');
+  if(!isSubUnit) document.body.classList.add('drag-item');
+  if(navigator.vibrate) navigator.vibrate(12);
+  drag = { hold: p.touch && p.onText, field: p.field, moved: !p.touch, sx: x, sy: y, unit: p.unit, isSubUnit, root: document.querySelector('.list[data-container="root"]'), into: null,
+    ghost, off: y - rect.top, x, y, pid: p.id,
+    scroller: setInterval(() => {
+      if(!drag) return;
+      if(drag.y < 90) window.scrollBy(0, -12);
+      else if(drag.y > window.innerHeight - 150) window.scrollBy(0, 12);
+      else return;
+      moveDrag(drag.x, drag.y);
+    }, 16) };
+}
+function moveDrag(x, y){
+  if(!drag) return;
+  drag.x = x; drag.y = y;
+  if(!drag.moved && Math.hypot(x - drag.sx, y - drag.sy) > 8) drag.moved = true;
+  drag.ghost.style.top = (y - drag.off) + 'px';
+  document.querySelectorAll('.sub.hot').forEach(n => n.classList.remove('hot'));
+  let list = drag.root, before;       // before: undefined=依位置判斷, 節點=放在它前面, 'first'=放在最前面
+  let into = null;
+  if(!drag.isSubUnit){
+    const hit = document.elementFromPoint(x, y);
+    const ch = hit && hit.closest('.children');
+    const sb = hit && hit.closest('.sub');
+    if(ch){ list = ch; }
+    else if(sb){
+      const head = sb.querySelector(':scope > .subhead'), r = head.getBoundingClientRect();
+      if(y < r.top + r.height / 2){ before = sb; }
+      else {
+        const c = sb.querySelector(':scope > .children');
+        if(c){ list = c; before = 'first'; } else into = sb;      // 已收合的小群組：直接放進去
+      }
+    }
+    const hs = into || (list !== drag.root ? list.closest('.sub') : null);
+    if(hs) hs.classList.add('hot');
+  }
+  drag.into = into ? into.dataset.unit : null;
+  if(into) return;
+  const sibs = [...list.children].filter(c => c.dataset.unit && c !== drag.unit);
+  if(before === 'first') before = sibs[0] || null;
+  else if(before === undefined){
+    before = null;
+    for(const s of sibs){ const r = s.getBoundingClientRect(); if(y < r.top + r.height / 2){ before = s; break; } }
+  }
+  if(before){ if(drag.unit.nextElementSibling !== before || drag.unit.parentElement !== list) list.insertBefore(drag.unit, before); }
+  else if(drag.unit.parentElement !== list || list.lastElementChild !== drag.unit) list.appendChild(drag.unit);
+}
+function endDrag(){
+  const d = drag; drag = null;
+  clearInterval(d.scroller); d.ghost.remove();
+  d.unit.classList.remove('placeholder');
+  document.body.classList.remove('dragging', 'drag-item');
+  document.querySelectorAll('.sub.hot').forEach(n => n.classList.remove('hot'));
+  suppressUntil = Date.now() + 400;
+  if(d.hold && !d.moved){                 // 按住後沒有移動就放開 = 修改名稱
+    editing = { id: d.unit.dataset.unit, field: d.field };
+    pendingRender = false; render(); return;
+  }
+  const g = group(view);
+  const total = () => g.items.reduce((n, it) => n + 1 + (isSub(it) ? it.items.length : 0), 0);
+  const before = total();
+  const map = new Map();
+  g.items.forEach(it => { map.set(it.id, it); if(isSub(it)) it.items.forEach(c => map.set(c.id, c)); });
+  if(d.into){
+    const item = map.get(d.unit.dataset.unit), sub = map.get(d.into), r = item && find(g, item.id);
+    if(r && sub && isSub(sub) && !isSub(item)){ r.arr.splice(r.arr.indexOf(item), 1); sub.items.push(item); }
+  } else {
+    const ids = l => [...l.children].filter(c => c.dataset.unit).map(c => c.dataset.unit);
+    const newRoot = ids(d.root).map(i => map.get(i)).filter(Boolean);
+    const newKids = new Map();
+    g.items.filter(isSub).forEach(sb => {
+      const cl = document.querySelector(`.children[data-container="${sb.id}"]`);
+      if(cl) newKids.set(sb.id, ids(cl).map(i => map.get(i)).filter(x => x && !isSub(x)));
+    });
+    const after = newRoot.reduce((n, it) => n + 1 + (isSub(it) ? (newKids.get(it.id) || it.items).length : 0), 0);
+    if(after === before){
+      newKids.forEach((arr, id) => { const sb = map.get(id); sb.items.splice(0, sb.items.length, ...arr); });
+      g.items.splice(0, g.items.length, ...newRoot);
+    }
+  }
+  pendingRender = false;
+  commit();
+}
+
+/* ---------- 對話框 ---------- */
+function openDialog(build){
+  const f = $('#dlgForm'); f.innerHTML = ''; build(f, () => $('#dlg').close()); $('#dlg').showModal();
+}
+function enterTo(input, fn){ input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); fn(); } }); }
+function askDelete(title, msg, onOk, okLabel = '刪除'){
+  openDialog((f, close) => {
+    f.append(el('h2', {}, title), el('p', {}, msg),
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+        el('button', { class: 'btn warn', type: 'button', onclick: () => { close(); onOk(); } }, okLabel)));
+  });
+}
+function openGroupMenu(g){
+  openDialog((f, close) => {
+    const name = el('input', { type: 'text', value: g.name, 'aria-label': '群組名稱' });
+    const save = () => { renameGroup(g.id, name.value); close(); };
+    enterTo(name, save);
+    f.append(el('h2', {}, '群組選項'), el('p', {}, '修改群組名稱（也可以在標題上點兩下）'), name,
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, '刪除群組'),
+        el('button', { class: 'btn', type: 'button', onclick: save }, '儲存')));
+  });
+}
+function openSyncDialog(){
+  openDialog((f, close) => {
+    f.append(el('h2', {}, '同步設定'));
+    if(!configured()){
+      f.append(el('p', {}, '尚未填入 Firebase 設定，目前資料只存在這個瀏覽器。完成設定後，這裡就能輸入同步代碼。'),
+        el('div', { class: 'acts' }, el('button', { class: 'btn', type: 'button', onclick: close }, '知道了')));
+      return;
+    }
+    const code = el('input', { type: 'text', value: syncCode, placeholder: '例如：family-2026', autocapitalize: 'off', 'aria-label': '同步代碼' });
+    enterTo(code, () => code.nextElementSibling?.querySelector('.btn:not(.ghost)')?.click());
+    f.append(el('p', {}, '所有裝置輸入相同的同步代碼，就會看到同一份清單。請用不容易被猜到的代碼。'), code,
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+        el('button', { class: 'btn', type: 'button', onclick: () => {
+          const c = code.value.trim().replace(/[\/\s]/g, '');
+          syncCode = c; localStorage.setItem(LS_CODE, c); close(); startSync(); render(); toast(c ? '已套用同步代碼' : '已停止同步');
+        } }, '儲存')));
+  });
+}
+let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800); }
+
+render();
+startSync();
+</script>
+</body>
+</html>
