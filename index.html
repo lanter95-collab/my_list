@@ -134,6 +134,8 @@ dialog p{margin:6px 0 12px;color:var(--muted);font-size:14px;overflow-wrap:anywh
 dialog .acts{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
 dialog .acts .btn{height:36px;padding:0 16px;font-size:14px;border-radius:9px}
 dialog input{width:100%}
+dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.toolbar .imp{height:40px;padding:0 14px;font-size:14px}
 .hide{display:none!important}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}
 .toast.show{opacity:1}
@@ -447,14 +449,30 @@ function openJoin(){
 function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [], nameT: Date.now() }); commit(); reconcileIndex(); }
 function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; g.nameT = Date.now(); commit(g); reconcileIndex(); } }
 function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); state.deleted = [...(state.deleted || []), id]; view = null; commit(); reconcileIndex(); }
+/* 「名稱╳數量」→ 名稱 + 數量（支援 ╳ × ✕ ，數量可用全形數字，後面可接 顆／個／支…；╳ 後面沒數字就當作沒有數量） */
+const QTY_RE = /(?:\s*[╳×✕]\s*([0-9０-９]*)|\s+[xX]\s*([0-9０-９]+))\s*(?:顆|個|支|組|條|包|瓶|罐|隻|張|件|只|片|把|盒)?\s*$/;
+function parseLine(t){
+  t = t.trim();
+  const m = t.match(QTY_RE);
+  if(!m) return { text: t, qty: '' };
+  const name = t.slice(0, m.index).trim();
+  if(!name) return { text: t, qty: '' };
+  const d = (m[1] || m[2] || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 65248));
+  return { text: name, qty: d ? cleanQty(d) : '' };
+}
 function addItems(key, raw, qtyRaw){
   const g = group(view); if(!g) return;
   const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
   if(!target) return;
-  const names = raw.split(/\n|、|，|,/).map(s => s.trim()).filter(Boolean);
-  if(!names.length) return;
-  const q = names.length === 1 ? cleanQty(qtyRaw) : '';
-  names.forEach(t => target.push({ id: uid(), text: t, qty: q, done: false }));
+  const multi = /\r?\n/.test(raw);                     // 多行貼上：只用換行分隔（名稱裡的頓號不會被拆開）
+  const parts = (multi ? raw.split(/\r?\n/) : raw.split(/、|，|,/)).map(x => x.trim()).filter(Boolean);
+  if(!parts.length) return;
+  parts.forEach(p => {
+    const r = parseLine(p);
+    let q = r.qty;
+    if(parts.length === 1 && q === '') q = cleanQty(qtyRaw);
+    target.push({ id: uid(), text: r.text, qty: q, done: false });
+  });
   commit();
 }
 const subHue = s => (typeof s.hue === 'number') ? s.hue : hue(s.id);
@@ -645,6 +663,7 @@ function renderGroup(app, g){
   if(g.locked){ app.append(lockPanel(g)); return; }
   app.append(el('div', { class: 'toolbar' },
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all) }, checkBox(all), all ? '全部取消' : '全選'),
+    el('button', { class: 'btn ghost imp', onclick: pickImport, 'aria-label': '從 txt 檔匯入' }, '匯入'),
     el('span', { class: 'sum' }, lv.length ? `已完成 ${done} / ${lv.length}` : '')));
 
   if(!g.items.length){
@@ -694,6 +713,50 @@ function buildAddBar(g){
   return el('div', { class: 'addbar' }, el('div', { class: 'in' },
     el('div', { class: 'ctl' }, sel || '', modeBtn),
     el('div', { class: 'line' }, name, qty, ok)));
+}
+
+/* ---------- 匯入 txt（每行「名稱╳數量」，追加到後面，不覆蓋原有內容） ---------- */
+function pickImport(){
+  const inp = el('input', { type: 'file', accept: '.txt,text/plain', class: 'hide' });
+  const done = () => inp.remove();
+  inp.addEventListener('cancel', done);
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; done();
+    if(!f) return;
+    try{
+      const buf = await f.arrayBuffer();
+      let text;
+      try{ text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }       // 一般 UTF-8
+      catch(e){ text = new TextDecoder('big5').decode(buf); }                    // 記事本舊版「ANSI」存檔
+      openImport(text.replace(/^\uFEFF/, ''));
+    }catch(e){ console.error(e); toast('讀取檔案失敗'); }
+  });
+  document.body.append(inp); inp.click();
+}
+function openImport(text){
+  const g = group(view); if(!g) return;
+  const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean).map(parseLine);
+  if(!lines.length){ toast('檔案裡沒有內容'); return; }
+  const subs = g.items.filter(isSub);
+  openDialog((f, close) => {
+    const dest = el('select', { 'aria-label': '匯入到哪裡' }, el('option', { value: '' }, '最上層（不在小群組）'), subs.map(x => el('option', { value: x.id }, x.name)));
+    dest.value = subs.some(x => x.id === addTarget) ? addTarget : '';
+    const peek = lines.slice(0, 3).map(l => l.text + (l.qty ? '×' + l.qty : '')).join('、') + (lines.length > 3 ? '…' : '');
+    f.append(el('h2', {}, `匯入 ${lines.length} 個項目`),
+      el('p', {}, `新項目會加在「${g.name}」的最後面，原有內容不會被改動。`),
+      el('p', {}, '開頭幾筆：' + peek));
+    if(subs.length) f.append(el('p', {}, '放到：'), dest);
+    f.append(el('div', { class: 'acts' },
+      el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+      el('button', { class: 'btn', type: 'button', onclick: () => {
+        close();
+        const gg = group(view); if(!gg) return;
+        const target = dest.value ? gg.items.find(x => x.id === dest.value)?.items : gg.items;
+        if(!target) return;
+        lines.forEach(l => target.push({ id: uid(), text: l.text, qty: l.qty, done: false }));
+        commit(); toast(`已匯入 ${lines.length} 項`);
+      } }, '匯入')));
+  });
 }
 
 function lockPanel(g){
