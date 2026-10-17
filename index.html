@@ -43,12 +43,12 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .title-in{font-size:20px;font-weight:700;flex:1}
 
 /* home */
-.group{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.group{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px 10px;margin-bottom:6px}
 .group{cursor:pointer}
 .group .top{display:flex;justify-content:space-between;align-items:center;gap:4px}
 .group .name{flex:1;min-width:0}
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:18px 6px;margin-bottom:12px}
-.tile{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:6px 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px 2px;margin-bottom:10px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:6px 0 2px}
 .tile .wrap52{position:relative;width:52px;height:52px}
 .tile .ico{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;position:relative;overflow:hidden}
 .tile .ico i{position:absolute;left:0;bottom:0;height:4px;background:rgba(255,255,255,.9)}
@@ -59,9 +59,10 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .badge.l{left:-8px}.badge.r{right:-8px}
 .group .name{font-weight:700;font-size:17px;overflow-wrap:anywhere}
 .group .cnt{color:var(--muted);font-size:14px;white-space:nowrap}
-.bar{height:6px;background:var(--line);border-radius:3px;margin-top:10px;overflow:hidden}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--tick);width:0;transition:width .25s}
-.add-group{display:flex;gap:8px;margin:0 0 14px}
+.add-group{display:flex;gap:8px;margin:0 0 12px}
+.btn.plus{width:44px;padding:0;font-size:24px;line-height:1}
 .empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:14px;margin-bottom:12px}
 
 /* toolbar */
@@ -124,13 +125,14 @@ body.drag-item .children{min-height:40px}
 
 /* drag */
 .placeholder{opacity:.35;background:var(--surface2)}
-.ghost{position:fixed;z-index:60;pointer-events:none;background:var(--surface);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.28);opacity:.96;overflow:hidden}
+.dragghost{position:fixed;z-index:60;pointer-events:none;background:var(--surface);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.28);opacity:.96;overflow:hidden}
 
 dialog{border:0;border-radius:16px;background:var(--surface);color:var(--ink);padding:20px;width:min(92vw,420px)}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog h2{margin:0 0 8px;font-size:18px}
 dialog p{margin:6px 0 12px;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
-dialog .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+dialog .acts{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+dialog .acts .btn{height:36px;padding:0 16px;font-size:14px;border-radius:9px}
 dialog input{width:100%}
 .hide{display:none!important}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}
@@ -550,7 +552,7 @@ function openRename(g){
     f.append(el('h2', {}, '修改群組名稱'), name,
       el('div', { class: 'acts' },
         el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
-        el('button', { class: 'btn', type: 'button', onclick: save }, '儲存')));
+        el('button', { class: 'btn', type: 'button', onclick: save }, 'SAVE')));
     setTimeout(() => { name.focus(); name.select(); }, 50);
   });
 }
@@ -578,7 +580,7 @@ function renderHome(app){
   const input = el('input', { type: 'text', placeholder: '新增清單群組名稱', enterkeyhint: 'done', 'aria-label': '群組名稱' });
   const go = () => addGroup(input.value);
   input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); });
-  app.append(el('div', { class: 'add-group' }, input, el('button', { class: 'btn', onclick: go }, '建立'), el('button', { class: 'btn ghost', onclick: openJoin }, '加入')));
+  app.append(el('div', { class: 'add-group' }, input, el('button', { class: 'btn plus', onclick: go, 'aria-label': '建立群組' }, '＋'), el('button', { class: 'btn ghost', onclick: openJoin }, '加入')));
 
   const act = (cls, label, txt, fn) => el('button', { class: cls, 'aria-label': label, onclick: e => { e.stopPropagation(); fn(); } }, txt);
   if(homeView === 'cards'){
@@ -671,7 +673,7 @@ function buildAddBar(g){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
     qty.classList.toggle('hide', subMode);
     if(sel) sel.disabled = subMode;
-    ok.textContent = subMode ? '建立' : '新增';
+    ok.textContent = subMode ? '＋' : '新增'; ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
     const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
     name.placeholder = ph; name.setAttribute('aria-label', ph);
   }
@@ -828,7 +830,7 @@ function startDrag(x, y){
   const p = press; clearTimeout(p.timer); press = null;
   const rect = p.unit.getBoundingClientRect();
   const ghost = p.unit.cloneNode(true);
-  ghost.classList.add('ghost');
+  ghost.classList.add('dragghost');
   Object.assign(ghost.style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px' });
   document.body.append(ghost);
   p.unit.classList.add('placeholder');
@@ -949,11 +951,11 @@ function openGroupMenu(g){
     };
     enterTo(name, save); enterTo(code, save);
     f.append(el('h2', {}, '群組選項'),
-      el('p', {}, '群組名稱（也可以在標題上點兩下）'), name,
+      el('p', {}, '群組名稱'), name,
       el('p', {}, '同步代碼：使用相同代碼的裝置會共用這個群組。每個群組要用不同的代碼；只想自己看的，就用只有你知道的代碼。至少 6 個字元。'), code,
       el('div', { class: 'acts' },
-        el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, '刪除群組'),
-        el('button', { class: 'btn', type: 'button', onclick: save }, '儲存')));
+        el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, 'DEL'),
+        el('button', { class: 'btn', type: 'button', onclick: save }, 'SAVE')));
   });
 }
 let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), Math.max(1800, m.length * 160)); }
