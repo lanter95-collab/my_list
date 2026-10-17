@@ -147,6 +147,21 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
   .sub{--sub:hsl(var(--h,140) 32% 23%);--sub-soft:hsl(var(--h,140) 28% 16%);--sub-line:hsl(var(--h,140) 35% 42%)}
   .group{background:hsl(var(--h,200) 28% 17%);border-color:hsl(var(--h,200) 25% 28%)}
 }
+/* 項目照片（☁️ 上傳、10×10 縮圖、點開看大圖） */
+.pic{display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;margin-left:2em;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
+.pic:hover,.pic:focus-visible{opacity:1}
+.pic img{width:10px;height:10px;border-radius:2px;object-fit:cover;box-shadow:0 0 0 1px var(--line);display:block}
+.viewer{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.9);display:flex;flex-direction:column;color:#fff}
+.vbar{display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px))}
+.vbar .vt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vbar .vb{height:36px;padding:0 14px;font-size:14px;border-radius:9px}
+.vbox{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px}
+.vbox img{max-width:100%;max-height:calc(100vh - 150px);object-fit:contain;cursor:zoom-in}
+@supports (height:100dvh){.vbox img{max-height:calc(100dvh - 150px)}}
+.vbox.full{display:block}
+.vbox.full img{max-width:none;max-height:none;cursor:zoom-out}
+.vfoot{padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));text-align:center;font-size:13px;color:#b8c4cc}
+.vfoot a{color:#9fd3ff}
 </style>
 </head>
 <body>
@@ -169,6 +184,8 @@ const FIREBASE_CONFIG = {
 /* =========================================================== */
 
 const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
+const IMGBB_KEY = '3e63e52100d718b4fe1b7f8be452fd15';   // 項目照片上傳到 imgbb
+const PHOTO_MAX_SIDE = 2400;                            // 照片長邊上限（px），上傳前先縮小以加快速度；設 0 = 不縮小
 const INDEX_ID = '_group_index';   // 群組清單（只有名稱，不含內容）放在這份雲端文件
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const $ = s => document.querySelector(s);
@@ -181,7 +198,7 @@ let state = load();
 let view = null;                 // 目前開啟的大群組 id
 let editing = null;              // { id, field:'text'|'qty' }，id='__title' 代表群組標題
 let refocus = false, undoSnap = null, pendingRender = false;
-let addTarget = '';
+let addTarget = '', uploadingId = null;
 let homeView = localStorage.getItem('mylists-homeview') || 'list';
 let db = null;
 
@@ -759,6 +776,71 @@ function openImport(text){
   });
 }
 
+/* ---------- 項目照片（imgbb） ---------- */
+function picBtn(it){
+  const busy = uploadingId === it.id;
+  return el('span', { class: 'pic', role: 'button', tabindex: '0', 'aria-label': it.img ? '查看照片' : '上傳照片',
+    onclick: e => { e.stopPropagation(); if(blocked() || busy) return; it.img ? openViewer(it.id) : pickPhoto(it.id); },
+    onkeydown: e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); e.target.click(); } } },
+    busy ? '⏳' : it.img ? el('img', { src: it.img.t || it.img.u, alt: '', loading: 'lazy' }) : '☁️');
+}
+function pickPhoto(id){
+  const inp = el('input', { type: 'file', accept: 'image/*', class: 'hide' });
+  const done = () => inp.remove();
+  inp.addEventListener('cancel', done);
+  inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; done(); if(f) uploadPhoto(id, f); });
+  document.body.append(inp); inp.click();
+}
+async function shrink(file){
+  if(!PHOTO_MAX_SIDE) return file;
+  try{
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const sc = Math.min(1, PHOTO_MAX_SIDE / Math.max(bmp.width, bmp.height));
+    if(sc === 1 && file.type === 'image/jpeg') return file;
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(res => c.toBlob(b => res(b || file), 'image/jpeg', 0.9));
+  }catch(e){ return file; }
+}
+async function uploadPhoto(id, file){
+  const gid = view;
+  uploadingId = id; render(); toast('照片上傳中…');
+  try{
+    const blob = await shrink(file);
+    const fd = new FormData(); fd.append('image', blob, 'photo.jpg');
+    const res = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method: 'POST', body: fd });
+    const j = await res.json();
+    if(!j.success) throw new Error(j.error?.message || 'upload failed');
+    const d = j.data, g = group(gid), r = g && find(g, id);
+    uploadingId = null;
+    if(r){ r.it.img = { u: d.display_url || d.url, t: (d.thumb && d.thumb.url) || d.url, d: d.delete_url || '' }; commit(g); toast('照片已上傳'); }
+    else render();
+  }catch(e){ console.error(e); uploadingId = null; render(); toast('上傳失敗，請檢查網路後再試'); }
+}
+function openViewer(id){
+  const r = find(group(view), id); if(!r || !r.it.img) return;
+  const it = r.it;
+  const img = el('img', { src: it.img.u, alt: it.text });
+  const box = el('div', { class: 'vbox' }, img);
+  const ov = el('div', { class: 'viewer', role: 'dialog', 'aria-label': '照片' });
+  const onKey = e => { if(e.key === 'Escape') close(); };
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+  document.addEventListener('keydown', onKey);
+  img.addEventListener('click', e => { e.stopPropagation(); box.classList.toggle('full'); });
+  box.addEventListener('click', e => { if(e.target === box) close(); });
+  const del = () => askDelete('刪除這張照片？',
+    '照片會從這個項目移除。' + (it.img.d ? '如果也要從 imgbb 帳號徹底刪除，請先關閉這個視窗，再按照片下方的「imgbb 刪除頁」。' : ''),
+    () => { const r2 = find(group(view), id); if(r2){ r2.it.img = null; commit(); } close(); });
+  ov.append(
+    el('div', { class: 'vbar' }, el('span', { class: 'vt' }, it.text),
+      el('button', { class: 'btn warn vb', type: 'button', onclick: del }, 'DEL'),
+      el('button', { class: 'btn ghost vb', type: 'button', onclick: close, 'aria-label': '關閉' }, '✕')),
+    box,
+    el('div', { class: 'vfoot' }, '點照片可切換「符合螢幕」與「原始大小」', it.img.d ? el('span', {}, '　·　', el('a', { href: it.img.d, target: '_blank', rel: 'noopener' }, 'imgbb 刪除頁 ↗')) : ''));
+  document.body.append(ov);
+}
+
 function lockPanel(g){
   const code = el('input', { type: 'text', placeholder: '輸入這個群組的同步代碼', autocapitalize: 'off', autocomplete: 'off', 'aria-label': '同步代碼' });
   const go = () => unlockWithCode(g, cleanCode(code.value));
@@ -800,12 +882,12 @@ function itemRow(it, n){
   const row = el('div', { class: 'row' + (it.done ? ' done on' : ''), 'data-unit': it.id, role: 'checkbox', 'aria-checked': String(!!it.done), tabindex: '0' },
     checkBox(it.done),
     el('span', { class: 'num' }, n + '.'),
-    el('span', { class: 'txt' }, it.text),
+    el('span', { class: 'txt' }, it.text, picBtn(it)),
     el('span', { class: 'qty' }, it.qty ? '×' + it.qty : ''),
     el('span', { class: 'grip', title: '按住拖曳', 'aria-hidden': 'true' }),
     el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
   row.addEventListener('click', e => {
-    if(blocked() || e.target.closest('.del')) return;
+    if(blocked() || e.target.closest('.del,.pic')) return;
     const t = e.target.closest('.txt,.qty');
     if(t && isDbl(it.id)){               // 雙擊：還原第一下的勾選，進入編輯
       it.done = !it.done;
@@ -866,6 +948,7 @@ document.addEventListener('touchmove', e => { if(drag) e.preventDefault(); }, { 
 document.addEventListener('pointerdown', e => {
   if(!view || drag) return;
   if(e.pointerType === 'mouse' && e.button !== 0) return;
+  if(e.target.closest('.pic')) return;
   const grip = e.target.closest('.grip');
   if(!grip && e.target.closest('input,select,button,textarea')) return;
   const unit = e.target.closest('[data-unit]');
