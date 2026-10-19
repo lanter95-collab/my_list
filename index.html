@@ -72,7 +72,7 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 
 /* list */
 .list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.row{display:flex;align-items:center;gap:10px;padding:0 2px 0 12px;min-height:44px;border-bottom:1px solid var(--line);cursor:pointer;
+.row{display:flex;align-items:center;gap:10px;padding:0 2px 0 12px;min-height:52px;border-bottom:1px solid var(--line);cursor:pointer;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;background:var(--surface)}
 .list>.row:last-child,.children>.row:last-child{border-bottom:0}
 .box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s;background:transparent;padding:0}
@@ -80,8 +80,9 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .on>.box,.box.on{background:var(--tick);border-color:var(--tick)}
 .on>.box svg,.box.on svg{opacity:1;transform:scale(1)}
 .num{flex:none;color:var(--muted);font-size:14px;min-width:1.8em;text-align:right;font-variant-numeric:tabular-nums}
-.txt{flex:1;padding:9px 0;overflow-wrap:anywhere;min-width:0;font-size:14px}
-.qty{flex:none;min-width:3.4em;text-align:right;color:var(--muted);padding:9px 4px;font-variant-numeric:tabular-nums}
+.txt{flex:1;padding:12px 0;overflow-wrap:anywhere;min-width:0}
+.qty{flex:none;min-width:2.4em;text-align:right;color:var(--muted);padding:12px 2px;font-variant-numeric:tabular-nums}
+.qty:empty{display:none}
 .row.done .txt{color:var(--done);text-decoration:line-through}
 .row.done .qty{color:var(--done)}
 .mini{flex:none;background:none;border:0;color:var(--muted);width:38px;height:44px;font-size:15px;border-radius:10px;opacity:.55;padding:0}
@@ -94,9 +95,6 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .children{margin-left:18px;border-left:3px solid var(--sub-line);background:var(--sub-soft)}
 .children:empty{border-left:0}
 .children .row{padding-left:8px;background:transparent}
-.grip{flex:none;width:28px;height:44px;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;opacity:.5}
-.grip::before{content:"";display:block;width:10px;height:18px;background:radial-gradient(circle,var(--muted) 1.5px,transparent 1.9px) 0 0/5px 6px}
-.grip:hover{opacity:1}
 body.drag-item .children{min-height:40px}
 .sub.hot>.subhead{outline:2px solid var(--tick);outline-offset:-2px}
 .sub.hot>.children{background:var(--sub)}
@@ -148,7 +146,8 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
   .group{background:hsl(var(--h,200) 28% 17%);border-color:hsl(var(--h,200) 25% 28%)}
 }
 /* 項目照片（☁️ 上傳、10×10 縮圖、點開看大圖） */
-.pic{display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;margin-left:2em;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
+.pic{display:inline-flex;align-items:center;justify-content:center;position:relative;width:20px;height:28px;margin-left:1.6em;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
+.pic::after{content:"";position:absolute;inset:-4px -8px}
 .pic:hover,.pic:focus-visible{opacity:1}
 .pic img{width:10px;height:10px;border-radius:2px;object-fit:cover;box-shadow:0 0 0 1px var(--line);display:block}
 .viewer{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.9);display:flex;flex-direction:column;color:#fff}
@@ -447,6 +446,7 @@ function openJoin(){
         let d; try{ d = JSON.parse(snap.data().json); }catch(e){}
         if(!d || !Array.isArray(d.items)){ toast('這個代碼的資料格式不符'); return; }
         const ex = d.gid && group(d.gid);
+        if(!ex && d.name && groupNameTaken(d.name)){ toast(`這台裝置已有同名群組「${d.name}」，請先把它改名再加入`); return; }
         if(ex && ex.locked){ unlockWithCode(ex, c); return; }
         if(ex){ toast('這個群組已在這台裝置上'); return; }
         const ng = { id: d.gid || uid(), name: d.name || '同步群組', items: d.items, code: c, updatedAt: snap.data().updatedAt || Date.now(), nameT: Date.now(), revive: true };
@@ -463,8 +463,13 @@ function openJoin(){
 }
 
 /* ---------- 操作 ---------- */
-function addGroup(name){ name = name.trim(); if(!name) return; state.groups.push({ id: uid(), name, items: [], nameT: Date.now() }); commit(); reconcileIndex(); }
-function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name){ g.name = name; g.nameT = Date.now(); commit(g); reconcileIndex(); } }
+/* 名稱不可重複（不分大小寫、全半形、前後空白） */
+const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+const groupNameTaken = (name, exceptId) => state.groups.some(x => x.id !== exceptId && norm(x.name) === norm(name));
+const subNameTaken = (g, name, exceptId) => g.items.some(x => isSub(x) && x.id !== exceptId && norm(x.name) === norm(name));
+const itemNameTaken = (g, name, exceptId) => g.items.some(x => isSub(x) ? x.items.some(c => c.id !== exceptId && norm(c.text) === norm(name)) : (x.id !== exceptId && norm(x.text) === norm(name)));
+function addGroup(name){ name = name.trim(); if(!name) return; if(groupNameTaken(name)){ toast(`已有同名群組「${name}」（大小寫視為相同）`); return; } state.groups.push({ id: uid(), name, items: [], nameT: Date.now() }); commit(); reconcileIndex(); }
+function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name && norm(name) !== norm(g.name) && groupNameTaken(name, id)){ toast(`已有同名群組「${name}」，名稱未更改`); return; } if(g && name){ g.name = name; g.nameT = Date.now(); commit(g); reconcileIndex(); } }
 function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); state.deleted = [...(state.deleted || []), id]; view = null; commit(); reconcileIndex(); }
 /* 「名稱╳數量」→ 名稱 + 數量（支援 ╳ × ✕ ，數量可用全形數字，後面可接 顆／個／支…；╳ 後面沒數字就當作沒有數量） */
 const QTY_RE = /(?:\s*[╳×✕]\s*([0-9０-９]*)|\s+[xX]\s*([0-9０-９]+))\s*(?:顆|個|支|組|條|包|瓶|罐|隻|張|件|只|片|把|盒)?\s*$/;
@@ -484,13 +489,17 @@ function addItems(key, raw, qtyRaw){
   const multi = /\r?\n/.test(raw);                     // 多行貼上：只用換行分隔（名稱裡的頓號不會被拆開）
   const parts = (multi ? raw.split(/\r?\n/) : raw.split(/、|，|,/)).map(x => x.trim()).filter(Boolean);
   if(!parts.length) return;
+  let added = 0; const dup = [];
   parts.forEach(p => {
     const r = parseLine(p);
+    if(itemNameTaken(g, r.text)){ dup.push(r.text); return; }
     let q = r.qty;
     if(parts.length === 1 && q === '') q = cleanQty(qtyRaw);
     target.push({ id: uid(), text: r.text, qty: q, done: false });
+    added++;
   });
-  commit();
+  if(dup.length) toast(added ? `已略過 ${dup.length} 個重複項目` : `已有同名項目「${dup[0]}」（大小寫視為相同）`);
+  if(added) commit();
 }
 const subHue = s => (typeof s.hue === 'number') ? s.hue : hue(s.id);
 function pickHue(used){            // 隨機挑色相，並盡量和已有的小群組拉開距離
@@ -504,6 +513,7 @@ function pickHue(used){            // 隨機挑色相，並盡量和已有的小
 }
 function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
+  if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
   const sub = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue(g.items.filter(isSub).map(subHue)) };
   g.items.push(sub); addTarget = sub.id; refocus = true;
   toast(`已建立「${name}」，接著新增的項目會放進去`);
@@ -666,7 +676,7 @@ function renderGroup(app, g){
   if(editing && editing.id === '__title'){
     const inp = el('input', { type: 'text', class: 'title-in e-name', value: g.name, 'aria-label': '群組名稱' });
     title = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
-    bindEdit(title, [inp], () => { const v = inp.value.trim(), gg = group(view); if(v && gg){ gg.name = v; gg.nameT = Date.now(); } editing = null; commit(); reconcileIndex(); }, stopEdit);
+    bindEdit(title, [inp], () => { const v = inp.value.trim(), gg = group(view); if(v && gg){ if(norm(v) !== norm(gg.name) && groupNameTaken(v, gg.id)) toast(`已有同名群組「${v}」，名稱未更改`); else { gg.name = v; gg.nameT = Date.now(); } } editing = null; commit(); reconcileIndex(); }, stopEdit);
   } else {
     const startEdit = () => { editing = { id: '__title', field: 'text' }; render(); };
     title = el('h1', { title: '點兩下（手機：按住再放開）可修改名稱', onclick: () => { if(!blocked() && isDbl('__title')) startEdit(); } }, g.name);
@@ -752,15 +762,19 @@ function pickImport(){
 }
 function openImport(text){
   const g = group(view); if(!g) return;
-  const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean).map(parseLine);
-  if(!lines.length){ toast('檔案裡沒有內容'); return; }
+  const all = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean).map(parseLine);
+  if(!all.length){ toast('檔案裡沒有內容'); return; }
+  const seen = new Set(), lines = [];
+  all.forEach(l => { const k = norm(l.text); if(!seen.has(k) && !itemNameTaken(g, l.text)){ seen.add(k); lines.push(l); } });
+  const skipped = all.length - lines.length;
+  if(!lines.length){ toast('檔案裡的項目都已經存在，沒有可匯入的'); return; }
   const subs = g.items.filter(isSub);
   openDialog((f, close) => {
     const dest = el('select', { 'aria-label': '匯入到哪裡' }, el('option', { value: '' }, '最上層（不在小群組）'), subs.map(x => el('option', { value: x.id }, x.name)));
     dest.value = subs.some(x => x.id === addTarget) ? addTarget : '';
     const peek = lines.slice(0, 3).map(l => l.text + (l.qty ? '×' + l.qty : '')).join('、') + (lines.length > 3 ? '…' : '');
     f.append(el('h2', {}, `匯入 ${lines.length} 個項目`),
-      el('p', {}, `新項目會加在「${g.name}」的最後面，原有內容不會被改動。`),
+      el('p', {}, `新項目會加在「${g.name}」的最後面，原有內容不會被改動。` + (skipped ? `有 ${skipped} 個與現有項目或檔案內重複，會自動略過。` : '')),
       el('p', {}, '開頭幾筆：' + peek));
     if(subs.length) f.append(el('p', {}, '放到：'), dest);
     f.append(el('div', { class: 'acts' },
@@ -770,8 +784,9 @@ function openImport(text){
         const gg = group(view); if(!gg) return;
         const target = dest.value ? gg.items.find(x => x.id === dest.value)?.items : gg.items;
         if(!target) return;
-        lines.forEach(l => target.push({ id: uid(), text: l.text, qty: l.qty, done: false }));
-        commit(); toast(`已匯入 ${lines.length} 項`);
+        let n = 0;
+        lines.forEach(l => { if(!itemNameTaken(gg, l.text)){ target.push({ id: uid(), text: l.text, qty: l.qty, done: false }); n++; } });
+        commit(); toast(`已匯入 ${n} 項`);
       } }, '匯入')));
   });
 }
@@ -869,7 +884,9 @@ function itemRow(it, n){
     row._save = bindEdit(row, [name, qty], () => {
       const g2 = group(view), c2 = g2 && find(g2, it.id);          // 重新查一次，避免剛好同步到別台裝置的更新
       if(c2){
-        const v = name.value.trim(); if(v) c2.it.text = v; c2.it.qty = cleanQty(qty.value);
+        const v = name.value.trim();
+        if(v && norm(v) !== norm(c2.it.text) && itemNameTaken(g2, v, c2.it.id)) toast(`已有同名項目「${v}」，名稱未更改`); else if(v) c2.it.text = v;
+        c2.it.qty = cleanQty(qty.value);
         if(where && where.value !== curKey){
           const dest = where.value ? g2.items.find(x => x.id === where.value)?.items : g2.items;
           if(dest && dest !== c2.arr){ c2.arr.splice(c2.arr.indexOf(c2.it), 1); dest.push(c2.it); if(where.value) addTarget = where.value; }
@@ -884,7 +901,6 @@ function itemRow(it, n){
     el('span', { class: 'num' }, n + '.'),
     el('span', { class: 'txt' }, it.text, picBtn(it)),
     el('span', { class: 'qty' }, it.qty ? '×' + it.qty : ''),
-    el('span', { class: 'grip', title: '按住拖曳', 'aria-hidden': 'true' }),
     el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
   row.addEventListener('click', e => {
     if(blocked() || e.target.closest('.del,.pic')) return;
@@ -908,7 +924,7 @@ function subBlock(s, n){
     const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
     head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num' }, n + '.'), name,
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => head._save() }, '✓'));
-    head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); if(v && c2) c2.it.name = v; editing = null; commit(); }, stopEdit);
+    head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
   } else {
     const dn = s.items.filter(i => i.done).length;
     head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
@@ -916,7 +932,6 @@ function subBlock(s, n){
       el('span', { class: 'num' }, n + '.'),
       el('span', { class: 'txt' }, s.name),
       el('span', { class: 'cnt' }, s.items.length ? `${dn}/${s.items.length}` : ''),
-      el('span', { class: 'grip', title: '按住拖曳', 'aria-hidden': 'true' }),
       el('button', { class: 'mini fold', 'aria-label': s.collapsed ? '展開' : '收合', onclick: e => { e.stopPropagation(); if(!blocked()) toggleFold(s.id); } }, s.collapsed ? '▸' : '▾'),
       el('button', { class: 'mini del', 'aria-label': '刪除小群組 ' + s.name, onclick: e => { e.stopPropagation(); if(blocked()) return;
         askDelete(`刪除小群組「${s.name}」？`, s.items.length ? `裡面的 ${s.items.length} 個項目也會一起刪除，無法復原。` : '刪除後無法復原。', () => removeById(s.id)); } }, '−'));
