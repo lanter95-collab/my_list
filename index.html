@@ -72,26 +72,27 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 
 /* list */
 .list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.row{display:flex;align-items:center;gap:10px;padding:0 2px 0 12px;min-height:52px;border-bottom:1px solid var(--line);cursor:pointer;
+.row{display:flex;align-items:center;gap:10px;padding:0 2px 0 12px;min-height:36px;border-bottom:1px solid var(--line);cursor:pointer;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;background:var(--surface)}
 .list>.row:last-child,.children>.row:last-child{border-bottom:0}
 .box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s;background:transparent;padding:0}
 .box svg{width:16px;height:16px;stroke:#fff;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:all .12s}
 .on>.box,.box.on{background:var(--tick);border-color:var(--tick)}
 .on>.box svg,.box.on svg{opacity:1;transform:scale(1)}
-.num{flex:none;color:var(--muted);font-size:14px;min-width:1.8em;text-align:right;font-variant-numeric:tabular-nums}
-.txt{flex:1;padding:12px 0;overflow-wrap:anywhere;min-width:0}
-.qty{flex:none;min-width:2.4em;text-align:right;color:var(--muted);padding:12px 2px;font-variant-numeric:tabular-nums}
+.num{flex:none;color:var(--muted);font-size:12px;min-width:1.8em;text-align:right;font-variant-numeric:tabular-nums}
+.txt{flex:1;padding:7px 0;font-size:12px;overflow-wrap:anywhere;min-width:0}
+.qty{flex:none;min-width:2.4em;text-align:right;color:var(--muted);padding:7px 2px;font-size:12px;font-variant-numeric:tabular-nums}
 .qty:empty{display:none}
 .row.done .txt{color:var(--done);text-decoration:line-through}
 .row.done .qty{color:var(--done)}
-.mini{flex:none;background:none;border:0;color:var(--muted);width:38px;height:44px;font-size:15px;border-radius:10px;opacity:.55;padding:0}
+.mini{flex:none;background:none;border:0;color:var(--muted);width:34px;height:36px;font-size:15px;border-radius:10px;opacity:.55;padding:0}
 .mini:hover{opacity:1}
 .del{font-size:17px}
 .sub{border-bottom:1px solid var(--line)}
 .list>.sub:last-child{border-bottom:0}
 .subhead{background:var(--sub);font-weight:500}
-.subhead .cnt{flex:none;color:var(--muted);font-size:13px;font-weight:400}
+.subhead .cnt{flex:none;color:var(--muted);font-size:12px;font-weight:400}
+.subhead .txt{font-size:13px}
 .children{margin-left:18px;border-left:3px solid var(--sub-line);background:var(--sub-soft)}
 .children:empty{border-left:0}
 .children .row{padding-left:8px;background:transparent}
@@ -326,7 +327,7 @@ window.addEventListener('pagehide', flushAll);
 
 /* ---------- 群組清單同步（不需代碼；只同步「有哪些群組、叫什麼」） ---------- */
 let reconciling = false, reAgain = false;
-function mergeIndex(remote){
+function mergeIndex(remote, rmeta = {}){
   const map = new Map(remote.map(e => [e.id, { ...e }]));
   let changed = false;
   (state.deleted || []).forEach(id => {
@@ -342,10 +343,14 @@ function mergeIndex(remote){
       e.name = g.name; e.t = g.nameT; changed = true;
     }
   });
-  return { list: [...map.values()], changed };
+  if(state.title && !state.titleT) state.titleT = Date.now();            // 舊版就有的標題，視為剛設定
+  let meta = { title: rmeta.title || '', titleT: rmeta.titleT || 0 };
+  if((state.titleT || 0) > meta.titleT){ meta = { title: state.title || '', titleT: state.titleT }; changed = true; }
+  return { list: [...map.values()], meta, changed };
 }
-function applyIndex(list){
+function applyIndex(list, meta = {}){
   let dirty = false;
+  if((meta.titleT || 0) > (state.titleT || 0)){ state.title = meta.title || ''; state.titleT = meta.titleT; dirty = true; }
   list.forEach(e => {
     const g = group(e.id);
     if(e.del){
@@ -364,17 +369,18 @@ async function reconcileIndex(){
   try{
     const database = ensureDb(), ref = database.collection('checklists').doc(INDEX_ID);
     const sent = new Set(state.deleted || []);
-    let merged = [];
+    let merged = { list: [], meta: {} };
     await database.runTransaction(async tx => {
       const snap = await tx.get(ref);
       let remote = [];
-      if(snap.exists){ try{ remote = JSON.parse(snap.data().json).groups || []; }catch(e){} }
-      const r = mergeIndex(remote);
-      merged = r.list;
-      if(r.changed || !snap.exists) tx.set(ref, { json: JSON.stringify({ groups: r.list }), updatedAt: Date.now() });
+      let rmeta = {};
+      if(snap.exists){ try{ const j = JSON.parse(snap.data().json); remote = j.groups || []; rmeta = { title: j.title, titleT: j.titleT }; }catch(e){} }
+      const r = mergeIndex(remote, rmeta);
+      merged = r;
+      if(r.changed || !snap.exists) tx.set(ref, { json: JSON.stringify({ groups: r.list, title: r.meta.title, titleT: r.meta.titleT }), updatedAt: Date.now() });
     });
     state.deleted = (state.deleted || []).filter(id => !sent.has(id));
-    const dirty = applyIndex(merged);
+    const dirty = applyIndex(merged.list, merged.meta);
     saveLocal();
     if(dirty && !editing) render();
   }catch(e){ console.error('群組清單同步失敗', e); }
@@ -511,6 +517,21 @@ function pickHue(used){            // 隨機挑色相，並盡量和已有的小
   }
   return best;
 }
+function moveTicked(destId){
+  const g = group(view); if(!g) return;
+  const dest = destId ? g.items.find(x => x.id === destId)?.items : g.items;
+  if(!dest) return;
+  const picked = [];
+  g.items.forEach(it => {
+    if(isSub(it)){ if(it.items !== dest) it.items.forEach(c => { if(c.done) picked.push({ c, arr: it.items }); }); }
+    else if(it.done && g.items !== dest) picked.push({ c: it, arr: g.items });
+  });
+  if(!picked.length){ toast('請先勾選要搬移的項目，再按 Move'); return; }
+  picked.forEach(({ c, arr }) => { arr.splice(arr.indexOf(c), 1); c.done = false; dest.push(c); });
+  const nm = destId ? g.items.find(x => x.id === destId).name : '最上層';
+  toast(`已把 ${picked.length} 項搬到「${nm}」`);
+  commit();
+}
 function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
   if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
@@ -559,6 +580,15 @@ function checkBox(on){
 let lastTap = { k: null, t: 0 };
 function isDbl(k){ const now = Date.now(), r = lastTap.k === k && now - lastTap.t < 380; lastTap = { k, t: r ? 0 : now }; return r; }
 const blocked = () => Date.now() < suppressUntil;
+/* 名稱／數量區的點擊：等一下看有沒有第二下。沒有 = 勾選；有 = 修改（不會先打勾） */
+const DBL_MS = 300;
+let pendingTap = null;
+function tapText(id, single, dbl){
+  if(pendingTap && pendingTap.id === id){ clearTimeout(pendingTap.t); pendingTap = null; dbl(); return; }
+  if(pendingTap){ clearTimeout(pendingTap.t); const f = pendingTap.fn; pendingTap = null; f(); }   // 先處理上一個還在等的點擊
+  const fn = () => { pendingTap = null; single(); };
+  pendingTap = { id, fn, t: setTimeout(fn, DBL_MS) };
+}
 
 function homeBadge(){
   const a = aggregate();
@@ -613,7 +643,7 @@ function renderHome(app){
   if(editing && editing.id === '__apptitle'){
     const inp = el('input', { type: 'text', class: 'title-in e-name', value: appTitle(), 'aria-label': '標題' });
     ttl = el('div', { style: 'flex:1;display:flex;min-width:0' }, inp);
-    bindEdit(ttl, [inp], () => { state.title = inp.value.trim(); editing = null; commit(); }, stopEdit);
+    bindEdit(ttl, [inp], () => { state.title = inp.value.trim(); state.titleT = Date.now(); editing = null; commit(); reconcileIndex(); }, stopEdit);
   } else {
     const startEdit = () => { editing = { id: '__apptitle', field: 'text' }; render(); };
     ttl = el('h1', { title: '點兩下（手機：按住再放開）可修改標題', onclick: () => { if(!blocked() && isDbl('__apptitle')) startEdit(); } }, appTitle());
@@ -668,6 +698,7 @@ function bindEdit(root, inputs, save, cancel){
 }
 const stopEdit = () => { editing = null; render(); };
 
+const letters = n => { let r = ''; n++; while(n > 0){ const m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; };   // 0→A, 25→Z, 26→AA
 function renderGroup(app, g){
   const lv = leaves(g), done = lv.filter(i => i.done).length, all = lv.length > 0 && done === lv.length;
 
@@ -697,7 +728,8 @@ function renderGroup(app, g){
     app.append(el('div', { class: 'empty' }, '還沒有項目。在下方輸入內容按「新增」，要分類就先按「小群組」。'));
   } else {
     const list = el('div', { class: 'list', 'data-container': 'root' });
-    g.items.forEach((it, i) => list.append(isSub(it) ? subBlock(it, i + 1) : itemRow(it, i + 1)));
+    let ni = 0, ns = 0;
+    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, letters(ns++)) : itemRow(it, ++ni)));
     app.append(list);
   }
   document.body.append(buildAddBar(g));
@@ -738,7 +770,7 @@ function buildAddBar(g){
   });
   paint();
   return el('div', { class: 'addbar' }, el('div', { class: 'in' },
-    el('div', { class: 'ctl' }, sel || '', modeBtn),
+    el('div', { class: 'ctl' }, sel || '', modeBtn, sel ? el('button', { class: 'btn mode', type: 'button', onclick: () => moveTicked(sel.value) }, 'Move') : ''),
     el('div', { class: 'line' }, name, qty, ok)));
 }
 
@@ -905,10 +937,10 @@ function itemRow(it, n){
   row.addEventListener('click', e => {
     if(blocked() || e.target.closest('.del,.pic')) return;
     const t = e.target.closest('.txt,.qty');
-    if(t && isDbl(it.id)){               // 雙擊：還原第一下的勾選，進入編輯
-      it.done = !it.done;
-      editing = { id: it.id, field: t.classList.contains('qty') ? 'qty' : 'text' };
-      commit(); return;
+    if(t){
+      const field = t.classList.contains('qty') ? 'qty' : 'text';
+      tapText(it.id, () => toggleItem(it.id), () => { editing = { id: it.id, field }; render(); });
+      return;
     }
     toggleItem(it.id);
   });
@@ -937,8 +969,9 @@ function subBlock(s, n){
         askDelete(`刪除小群組「${s.name}」？`, s.items.length ? `裡面的 ${s.items.length} 個項目也會一起刪除，無法復原。` : '刪除後無法復原。', () => removeById(s.id)); } }, '−'));
     head.addEventListener('click', e => {
       if(blocked() || e.target.closest('.mini')) return;
-      if(e.target.closest('.txt') && isDbl(s.id)){
-        undoSub(s.id); editing = { id: s.id, field: 'text' }; commit(); return;
+      if(e.target.closest('.txt')){
+        tapText(s.id, () => toggleSub(s.id), () => { editing = { id: s.id, field: 'text' }; render(); });
+        return;
       }
       toggleSub(s.id);
     });
