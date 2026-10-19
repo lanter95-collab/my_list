@@ -195,10 +195,14 @@ const $ = s => document.querySelector(s);
    項目   = { id, text, qty, done }
    小群組 = { id, name, items:[項目...], collapsed, done }   (有 items 陣列就是小群組)  */
 let state = load();
-let view = null;                 // 目前開啟的大群組 id
+/* 記住畫面狀態：重新整理後回到原本開著的群組、捲動位置、選好的小群組 */
+const LS_UI = 'mylists-ui';
+let ui = (() => { try{ return JSON.parse(localStorage.getItem(LS_UI)) || {}; }catch(e){ return {}; } })();
+const saveUI = () => { try{ localStorage.setItem(LS_UI, JSON.stringify(ui)); }catch(e){} };
+let view = (ui.view && state.groups.some(g => g.id === ui.view)) ? ui.view : null;   // 目前開啟的大群組 id
 let editing = null;              // { id, field:'text'|'qty' }，id='__title' 代表群組標題
 let refocus = false, undoSnap = null, pendingRender = false;
-let addTarget = '', uploadingId = null;
+let addTarget = (view && ui.t && ui.t[view]) || '', uploadingId = null;
 let homeView = localStorage.getItem('mylists-homeview') || 'list';
 let db = null;
 
@@ -536,7 +540,9 @@ function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
   if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
   const sub = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue(g.items.filter(isSub).map(subHue)) };
-  g.items.push(sub); addTarget = sub.id; refocus = true;
+  let last = -1; g.items.forEach((x, i) => { if(isSub(x)) last = i; });
+  if(last >= 0) g.items.splice(last + 1, 0, sub); else g.items.push(sub);        // 新的小群組緊接在其他小群組後面
+  addTarget = sub.id; refocus = true;
   toast(`已建立「${name}」，接著新增的項目會放進去`);
   commit();
 }
@@ -614,8 +620,10 @@ function render(){
     const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
   }
   refocus = false;
+  if(ui.view !== view){ ui.view = view; saveUI(); }
+  if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
 }
-function goto(id){ view = id; editing = null; addTarget = ''; render(); window.scrollTo(0, 0); }
+function goto(id){ view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
 
 function hue(id){ let h = 0; for(const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function toggleHomeView(){ homeView = homeView === 'list' ? 'cards' : 'list'; localStorage.setItem('mylists-homeview', homeView); render(); }
@@ -1155,7 +1163,15 @@ function openGroupMenu(g){
 let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), Math.max(1800, m.length * 160)); }
 
 localStorage.removeItem(LS_CODE);
+if('scrollRestoration' in history) history.scrollRestoration = 'manual';
 render();
+window.scrollTo(0, (ui.y && ui.y[view || 'home']) || 0);
+let scrollT = null;
+window.addEventListener('scroll', () => {
+  clearTimeout(scrollT);
+  scrollT = setTimeout(() => { ui.y = ui.y || {}; ui.y[view || 'home'] = Math.round(window.scrollY); saveUI(); }, 150);
+}, { passive: true });
+window.addEventListener('pagehide', () => { ui.y = ui.y || {}; ui.y[view || 'home'] = Math.round(window.scrollY); saveUI(); });
 state.groups.forEach(g => { if(g.code) listen(g); });
 startIndex();
 </script>
