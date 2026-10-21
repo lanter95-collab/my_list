@@ -167,11 +167,28 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
 .line2{display:flex;gap:8px;align-items:center}
 .line2 input{height:40px;flex:1;min-width:0}
 .line2 .a-date{flex:1.6}
-.meta{display:inline-block;font-size:8px;color:var(--muted);margin-left:6px;white-space:nowrap;vertical-align:baseline}
+.meta{display:inline-block;font-size:8px!important;line-height:1;color:var(--muted);margin-left:6px;white-space:nowrap;vertical-align:baseline}
 .wrap.tall{padding-bottom:200px}
 .mvline input{flex:1;min-width:0;height:38px;font-size:16px}
 dialog label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px;color:var(--ink)}
 dialog input[type=checkbox]{width:18px;height:18px;flex:none}
+/* 底部輸入列：由左到右 選單｜Ｇ｜Ｍ｜名稱｜日期｜金額｜數量｜＋ */
+.addbar .in{max-width:600px;margin:0 auto -8px;display:flex;flex-direction:row;flex-wrap:wrap;gap:0 8px;align-items:center}
+.addbar .in>*:not(.brk){margin-bottom:8px;min-width:0}
+.addbar .in .brk{display:none}
+.addbar select{flex:none;max-width:40%;min-width:56px;height:40px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.addbar .btn{height:40px;padding:0 12px;font-size:14px;flex:none}
+.addbar .btn.plus{width:40px;padding:0;font-size:22px;margin-left:auto}
+.addbar input[type=text]{height:40px}
+.addbar .a-name{flex:1 1 110px}
+.addbar .a-date{flex:0 0 104px}
+.addbar .a-amt{flex:0 0 84px}
+@media (max-width:559px){
+  .addbar .in .brk{display:block;flex-basis:100%;height:0}
+  .addbar .a-date{flex:1.6 1 0}
+  .addbar .a-amt{flex:1 1 0}
+  .addbar .btn.plus{width:44px}
+}
 </style>
 </head>
 <body>
@@ -780,14 +797,13 @@ function buildAddBar(g){
   const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組', 'aria-label': '建立小群組' }, 'Ｇ');
   const name = el('input', { type: 'text', class: 'a-name', enterkeyhint: 'done' });
   const qty = el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' });
-  const date = money ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
+  const date = money ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期', title: '西元年月日，例如 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
   const amt = money ? el('input', { type: 'text', class: 'a-amt', inputmode: 'decimal', placeholder: '金額', 'aria-label': '金額' }) : null;
   const ok = el('button', { class: 'btn plus', type: 'button', 'aria-label': '新增項目' }, '＋');
-  const line2 = money ? el('div', { class: 'line2' }, date, amt, qty) : null;
   const subName = () => subs.find(s => s.id === addTarget)?.name;
   function paint(){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
-    if(money) line2.classList.toggle('hide', subMode); else qty.classList.toggle('hide', subMode);
+    [qty, date, amt].forEach(x => x && x.classList.toggle('hide', subMode));
     if(sel) sel.disabled = subMode;
     ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
     const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
@@ -825,10 +841,18 @@ function buildAddBar(g){
   }
   if(sel) sel.addEventListener('change', fitSel);
   paint(); fitSel();
-  return el('div', { class: 'addbar' }, el('div', { class: 'in' },
-    el('div', { class: 'ctl' }, sel || '', modeBtn, sel ? el('button', { class: 'btn mode', type: 'button', title: '把打勾的項目搬到選好的小群組', 'aria-label': '搬移打勾的項目', onclick: () => moveTicked(sel.value) }, 'Ｍ') : ''),
-    el('div', { class: 'line' }, name, money ? '' : qty, ok),
-    line2 || ''));
+  /* 由左到右：選單｜Ｇ｜Ｍ｜名稱｜日期｜金額｜數量｜＋（窄螢幕自動折成兩列，順序不變） */
+  const moveBtn = sel ? el('button', { class: 'btn mode', type: 'button', title: '把打勾的項目搬到選好的小群組', 'aria-label': '搬移打勾的項目', onclick: () => moveTicked(sel.value) }, 'Ｍ') : null;
+  const brk = () => el('span', { class: 'brk' });
+  const kids = [];
+  if(sel) kids.push(sel);
+  kids.push(modeBtn);
+  if(moveBtn) kids.push(moveBtn);
+  if(!money && sel) kids.push(brk());             // 一般群組＋有小群組：窄螢幕時名稱欄移到第二列
+  kids.push(name);
+  if(money) kids.push(brk(), date, amt, qty); else kids.push(qty);
+  kids.push(ok);
+  return el('div', { class: 'addbar' }, el('div', { class: 'in' }, kids));
 }
 
 /* ---------- 匯入 txt（每行「名稱╳數量」，追加到後面，不覆蓋原有內容） ---------- */
