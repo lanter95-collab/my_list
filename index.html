@@ -27,7 +27,7 @@ header h1{font-size:22px;margin:0;flex:1;font-weight:700;letter-spacing:.02em;mi
 button{font:inherit;color:inherit;cursor:pointer}
 .icon-btn{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:40px;height:40px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
 .icon-btn:focus-visible,.btn:focus-visible,input:focus-visible,.row:focus-visible,.mini:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:0 14px;height:44px;font-weight:500;white-space:nowrap;flex:none}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:0 14px;height:44px;font-size:14px;font-weight:500;white-space:nowrap;flex:none}
 .btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 .btn.danger{background:transparent;color:var(--danger);border:1px solid var(--line)}
 .btn.warn{background:var(--danger);color:#fff}
@@ -67,7 +67,7 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 
 /* toolbar */
 .toolbar{display:flex;align-items:center;gap:12px;margin:0 2px 10px;min-height:40px}
-.master{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 14px 0 10px;height:40px}
+.master{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 14px 0 10px;height:40px;font-size:14px}
 .toolbar .sum{color:var(--muted);font-size:14px;margin-left:auto}
 
 /* list */
@@ -112,8 +112,8 @@ body.drag-item .children{min-height:40px}
 .addbar{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0))}
 .addbar .in{max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
 .ctl,.line{display:flex;gap:8px;align-items:center}
-.ctl select{flex:1;min-width:0;height:40px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
-.ctl .btn,.line .btn{height:40px;padding:0 14px;font-size:15px}
+.ctl select{flex:1;min-width:0;height:40px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.ctl .btn,.line .btn{height:40px;padding:0 14px;font-size:14px}
 .btn.mode{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 .btn.mode.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .line input[type=text]{height:44px}
@@ -162,6 +162,15 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
 .vbox.full img{max-width:none;max-height:none;cursor:zoom-out}
 .vfoot{padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));text-align:center;font-size:13px;color:#b8c4cc}
 .vfoot a{color:#9fd3ff}
+/* 日期／金額欄位（只在有開啟的群組出現） */
+.line2{display:flex;gap:8px;align-items:center}
+.line2 input{height:40px;flex:1;min-width:0}
+.line2 .a-date{flex:1.6}
+.meta{display:inline-block;font-size:8px;color:var(--muted);margin-left:6px;white-space:nowrap;vertical-align:baseline}
+.wrap.tall{padding-bottom:200px}
+.mvline input{flex:1;min-width:0;height:38px;font-size:16px}
+dialog label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px;color:var(--ink)}
+dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 </style>
 </head>
 <body>
@@ -249,6 +258,18 @@ function find(g, id){
   }
   return null;
 }
+function parseDate(v){            // '' = 沒填；null = 格式不對；否則回傳 8 碼 YYYYMMDD
+  const d = String(v || '').replace(/\D/g, '');
+  if(!d) return '';
+  if(d.length === 8){ const mo = +d.slice(4, 6), da = +d.slice(6, 8); if(mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return d; }
+  return null;
+}
+function parseAmt(v){             // '' = 沒填；null = 不是數字
+  const t = String(v || '').replace(/[,，\s]/g, '');
+  if(!t) return '';
+  return /^\d{1,9}(\.\d{1,2})?$/.test(t) ? Number(t) : null;
+}
+const fmtAmt = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 const cleanQty = v => { const s = String(v ?? '').replace(/\D/g, '').slice(0, 5); return s === '' ? '' : Number(s); };
 
 /* ---------- 同步（每個群組各自一組代碼；有代碼才會上雲端） ---------- */
@@ -300,7 +321,7 @@ function listen(g){
       if(!data || !Array.isArray(data.items)){ setG(cur.id, 'err'); return; }
       const ru = remote.updatedAt || 0, lu = cur.updatedAt || 0;
       if(ru > lu){
-        cur.items = data.items; cur.updatedAt = ru; saveLocal();
+        cur.items = data.items; if(data.opts) cur.opts = data.opts; cur.updatedAt = ru; saveLocal();
         if(!editing) render();
       } else if(ru < lu && !cache){ pushNow(cur.id); return; }
       if(!data.gid && !cache){ pushNow(cur.id); return; }          // 舊資料補上群組識別
@@ -320,7 +341,7 @@ function pushNow(id){
   if(!g.updatedAt){ g.updatedAt = Date.now(); saveLocal(); }
   try{
     ensureDb().collection('checklists').doc(g.code)
-      .set({ json: JSON.stringify({ gid: g.id, name: g.name, items: g.items }), updatedAt: g.updatedAt })
+      .set({ json: JSON.stringify({ gid: g.id, name: g.name, items: g.items, opts: g.opts || {} }), updatedAt: g.updatedAt })
       .then(() => setG(id, 'on')).catch(e => { console.error(e); setG(id, 'err'); });
   }catch(e){ console.error(e); setG(id, 'err'); }
 }
@@ -492,7 +513,7 @@ function parseLine(t){
   const d = (m[1] || m[2] || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 65248));
   return { text: name, qty: d ? cleanQty(d) : '' };
 }
-function addItems(key, raw, qtyRaw){
+function addItems(key, raw, qtyRaw, extra){
   const g = group(view); if(!g) return;
   const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
   if(!target) return;
@@ -505,7 +526,9 @@ function addItems(key, raw, qtyRaw){
     if(itemNameTaken(g, r.text)){ dup.push(r.text); return; }
     let q = r.qty;
     if(parts.length === 1 && q === '') q = cleanQty(qtyRaw);
-    target.push({ id: uid(), text: r.text, qty: q, done: false });
+    const item = { id: uid(), text: r.text, qty: q, done: false };
+    if(parts.length === 1 && extra){ if(extra.date) item.date = extra.date; if(extra.amt !== '') item.amt = extra.amt; }
+    target.push(item);
     added++;
   });
   if(dup.length) toast(added ? `已略過 ${dup.length} 個重複項目` : `已有同名項目「${dup[0]}」（大小寫視為相同）`);
@@ -619,6 +642,7 @@ function render(){
   } else if(refocus){
     const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
   }
+  app.classList.toggle('tall', !!(view && group(view) && group(view).opts && group(view).opts.money));
   refocus = false;
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
@@ -745,19 +769,23 @@ function renderGroup(app, g){
 
 function buildAddBar(g){
   const subs = g.items.filter(isSub);
+  const money = !!(g.opts && g.opts.money);
   if(!subs.some(s => s.id === addTarget)) addTarget = '';
   let subMode = false;
   const sel = subs.length ? el('select', { class: 'a-sel', 'aria-label': '放入哪個小群組' },
-    el('option', { value: '' }, '最上層（不放進小群組）'), subs.map(s => el('option', { value: s.id }, s.name))) : null;
+    el('option', { value: '' }, '---'), subs.map(s => el('option', { value: s.id }, s.name))) : null;
   if(sel) sel.value = addTarget;
-  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false' }, '小群組');
+  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組', 'aria-label': '建立小群組' }, 'Ｇ');
   const name = el('input', { type: 'text', class: 'a-name', enterkeyhint: 'done' });
   const qty = el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' });
+  const date = money ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
+  const amt = money ? el('input', { type: 'text', class: 'a-amt', inputmode: 'decimal', placeholder: '金額', 'aria-label': '金額' }) : null;
   const ok = el('button', { class: 'btn', type: 'button' }, '新增');
+  const line2 = money ? el('div', { class: 'line2' }, date, amt, qty) : null;
   const subName = () => subs.find(s => s.id === addTarget)?.name;
   function paint(){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
-    qty.classList.toggle('hide', subMode);
+    if(money) line2.classList.toggle('hide', subMode); else qty.classList.toggle('hide', subMode);
     if(sel) sel.disabled = subMode;
     ok.textContent = subMode ? '＋' : '新增'; ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
     const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
@@ -765,12 +793,20 @@ function buildAddBar(g){
   }
   const go = () => {
     const v = name.value; if(!v.trim()) return;
-    if(subMode) addSub(v); else { refocus = true; addItems(addTarget || 'root', v, qty.value); }
+    if(subMode){ addSub(v); return; }
+    let extra = null;
+    if(money){
+      const d = parseDate(date.value), a = parseAmt(amt.value);
+      if(d === null){ toast('日期請輸入 8 碼西元年月日，例如 20261021'); date.focus(); return; }
+      if(a === null){ toast('金額請輸入數字'); amt.focus(); return; }
+      extra = { date: d, amt: a };
+    }
+    refocus = true; addItems(addTarget || 'root', v, qty.value, extra);
   };
   modeBtn.addEventListener('click', () => { subMode = !subMode; paint(); name.focus(); });
   if(sel) sel.addEventListener('change', () => { addTarget = sel.value; paint(); });
   ok.addEventListener('click', go);
-  [name, qty].forEach(i => i.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); }));
+  [name, qty, date, amt].forEach(i => i && i.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) go(); }));
   name.addEventListener('paste', e => {
     if(subMode) return;
     const t = (e.clipboardData || window.clipboardData).getData('text');
@@ -778,8 +814,9 @@ function buildAddBar(g){
   });
   paint();
   return el('div', { class: 'addbar' }, el('div', { class: 'in' },
-    el('div', { class: 'ctl' }, sel || '', modeBtn, sel ? el('button', { class: 'btn mode', type: 'button', onclick: () => moveTicked(sel.value) }, 'Move') : ''),
-    el('div', { class: 'line' }, name, qty, ok)));
+    el('div', { class: 'ctl' }, sel || '', modeBtn, sel ? el('button', { class: 'btn mode', type: 'button', title: '把打勾的項目搬到選好的小群組', 'aria-label': '搬移打勾的項目', onclick: () => moveTicked(sel.value) }, 'Ｍ') : ''),
+    el('div', { class: 'line' }, name, money ? '' : qty, ok),
+    line2 || ''));
 }
 
 /* ---------- 匯入 txt（每行「名稱╳數量」，追加到後面，不覆蓋原有內容） ---------- */
@@ -921,12 +958,24 @@ function itemRow(it, n){
       where.value = curKey;
       row.append(el('div', { class: 'mvline' }, '放在', where));
     }
-    row._save = bindEdit(row, [name, qty], () => {
+    const money = !!(g.opts && g.opts.money);
+    let dIn = null, aIn = null;
+    if(money){
+      dIn = el('input', { type: 'text', class: 'e-date', inputmode: 'numeric', maxlength: '10', value: it.date || '', placeholder: '日期 20261021', 'aria-label': '日期' });
+      aIn = el('input', { type: 'text', class: 'e-amt', inputmode: 'decimal', value: (it.amt === undefined || it.amt === '') ? '' : String(it.amt), placeholder: '金額', 'aria-label': '金額' });
+      row.append(el('div', { class: 'mvline' }, dIn, aIn));
+    }
+    row._save = bindEdit(row, [name, qty, ...(money ? [dIn, aIn] : [])], () => {
       const g2 = group(view), c2 = g2 && find(g2, it.id);          // 重新查一次，避免剛好同步到別台裝置的更新
       if(c2){
         const v = name.value.trim();
         if(v && norm(v) !== norm(c2.it.text) && itemNameTaken(g2, v, c2.it.id)) toast(`已有同名項目「${v}」，名稱未更改`); else if(v) c2.it.text = v;
         c2.it.qty = cleanQty(qty.value);
+        if(money){
+          const d = parseDate(dIn.value), a = parseAmt(aIn.value);
+          if(d === null) toast('日期請輸入 8 碼，例如 20261021（日期未更改）'); else if(d) c2.it.date = d; else delete c2.it.date;
+          if(a === null) toast('金額請輸入數字（金額未更改）'); else if(a !== '') c2.it.amt = a; else delete c2.it.amt;
+        }
         if(where && where.value !== curKey){
           const dest = where.value ? g2.items.find(x => x.id === where.value)?.items : g2.items;
           if(dest && dest !== c2.arr){ c2.arr.splice(c2.arr.indexOf(c2.it), 1); dest.push(c2.it); if(where.value) addTarget = where.value; }
@@ -936,10 +985,15 @@ function itemRow(it, n){
     }, stopEdit);
     return row;
   }
+  const gm = group(view), metas = [];
+  if(gm && gm.opts && gm.opts.money){
+    if(it.date) metas.push(el('span', { class: 'meta' }, it.date));
+    if(it.amt !== undefined && it.amt !== '') metas.push(el('span', { class: 'meta' }, fmtAmt(it.amt)));
+  }
   const row = el('div', { class: 'row' + (it.done ? ' done on' : ''), 'data-unit': it.id, role: 'checkbox', 'aria-checked': String(!!it.done), tabindex: '0' },
     checkBox(it.done),
     el('span', { class: 'num' }, n + '.'),
-    el('span', { class: 'txt' }, it.text, picBtn(it)),
+    el('span', { class: 'txt' }, it.text, metas, picBtn(it)),
     el('span', { class: 'qty' }, it.qty ? '×' + it.qty : ''),
     el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
   row.addEventListener('click', e => {
@@ -1145,16 +1199,19 @@ function openGroupMenu(g){
       if(c && !configured()){ toast('尚未設定 Firebase'); return; }
       close();
       renameGroup(g.id, name.value);
+      if(!g.locked && moneyChk.checked !== !!(g.opts && g.opts.money)){ g.opts = { ...(g.opts || {}), money: moneyChk.checked }; commit(g); }
       if(g.locked){ if(c) unlockWithCode(g, c); return; }
       if(c !== (g.code || '')){
         if(!c){ stopListen(g.id); g.code = ''; saveLocal(); render(); toast('已停止同步，雲端資料仍保留'); }
         else attachCode(g, c);
       }
     };
+    const moneyChk = el('input', { type: 'checkbox' }); moneyChk.checked = !!(g.opts && g.opts.money);
     enterTo(name, save); enterTo(code, save);
     f.append(el('h2', {}, '群組選項'),
       el('p', {}, '群組名稱'), name,
       el('p', {}, '同步代碼：使用相同代碼的裝置會共用這個群組。每個群組要用不同的代碼；只想自己看的，就用只有你知道的代碼。至少 6 個字元。'), code,
+      g.locked ? '' : el('label', { class: 'chk' }, moneyChk, '啟用「日期、金額」欄位（購物清單用）'),
       el('div', { class: 'acts' },
         el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, 'DEL'),
         el('button', { class: 'btn', type: 'button', onclick: save }, 'SAVE')));
