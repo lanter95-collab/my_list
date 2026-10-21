@@ -63,6 +63,7 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .bar i{display:block;height:100%;background:var(--tick);width:0;transition:width .25s}
 .add-group{display:flex;gap:8px;margin:0 0 12px}
 .btn.plus{width:44px;padding:0;font-size:24px;line-height:1}
+.line .btn.plus{width:44px;padding:0;font-size:24px}
 .empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:14px;margin-bottom:12px}
 
 /* toolbar */
@@ -112,7 +113,7 @@ body.drag-item .children{min-height:40px}
 .addbar{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0))}
 .addbar .in{max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
 .ctl,.line{display:flex;gap:8px;align-items:center}
-.ctl select{flex:1;min-width:0;height:40px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
+.ctl select{flex:none;max-width:60%;min-width:56px;height:40px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
 .ctl .btn,.line .btn{height:40px;padding:0 14px;font-size:14px}
 .btn.mode{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 .btn.mode.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -120,7 +121,7 @@ body.drag-item .children{min-height:40px}
 .line .a-qty{height:44px}
 .line .btn{height:44px}
 .btn[disabled]{opacity:.4}
-@media (min-width:700px){.addbar .in{flex-direction:row;align-items:center}.addbar .ctl{flex:none;width:280px}.addbar .line{flex:1}}
+@media (min-width:700px){.addbar .in{flex-direction:row;align-items:center}.addbar .ctl{flex:none}.addbar .line{flex:1.4}.addbar .line2{flex:1.2}}
 
 /* drag */
 .placeholder{opacity:.35;background:var(--surface2)}
@@ -258,6 +259,7 @@ function find(g, id){
   }
   return null;
 }
+const moneyOn = g => !!g && (g.opts && typeof g.opts.money === 'boolean' ? g.opts.money : /shopping|購物/i.test(g.name || ''));   // 名稱含 Shopping／購物 的群組預設開啟，可在「⋯」手動開關
 function parseDate(v){            // '' = 沒填；null = 格式不對；否則回傳 8 碼 YYYYMMDD
   const d = String(v || '').replace(/\D/g, '');
   if(!d) return '';
@@ -642,7 +644,7 @@ function render(){
   } else if(refocus){
     const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
   }
-  app.classList.toggle('tall', !!(view && group(view) && group(view).opts && group(view).opts.money));
+  app.classList.toggle('tall', !!(view && moneyOn(group(view))));
   refocus = false;
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
@@ -769,7 +771,7 @@ function renderGroup(app, g){
 
 function buildAddBar(g){
   const subs = g.items.filter(isSub);
-  const money = !!(g.opts && g.opts.money);
+  const money = moneyOn(g);
   if(!subs.some(s => s.id === addTarget)) addTarget = '';
   let subMode = false;
   const sel = subs.length ? el('select', { class: 'a-sel', 'aria-label': '放入哪個小群組' },
@@ -780,14 +782,14 @@ function buildAddBar(g){
   const qty = el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' });
   const date = money ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
   const amt = money ? el('input', { type: 'text', class: 'a-amt', inputmode: 'decimal', placeholder: '金額', 'aria-label': '金額' }) : null;
-  const ok = el('button', { class: 'btn', type: 'button' }, '新增');
+  const ok = el('button', { class: 'btn plus', type: 'button', 'aria-label': '新增項目' }, '＋');
   const line2 = money ? el('div', { class: 'line2' }, date, amt, qty) : null;
   const subName = () => subs.find(s => s.id === addTarget)?.name;
   function paint(){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
     if(money) line2.classList.toggle('hide', subMode); else qty.classList.toggle('hide', subMode);
     if(sel) sel.disabled = subMode;
-    ok.textContent = subMode ? '＋' : '新增'; ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
+    ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
     const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
     name.placeholder = ph; name.setAttribute('aria-label', ph);
   }
@@ -812,7 +814,17 @@ function buildAddBar(g){
     const t = (e.clipboardData || window.clipboardData).getData('text');
     if(t.includes('\n')){ e.preventDefault(); refocus = true; addItems(addTarget || 'root', t, ''); }
   });
-  paint();
+  function fitSel(){                                   // 選單寬度剛好符合目前選到的文字
+    if(!sel) return;
+    const m = document.createElement('span');
+    m.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-size:14px;font-family:' + getComputedStyle(document.body).fontFamily;
+    m.textContent = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : '';
+    document.body.append(m);
+    sel.style.width = Math.ceil(m.getBoundingClientRect().width + 36) + 'px';
+    m.remove();
+  }
+  if(sel) sel.addEventListener('change', fitSel);
+  paint(); fitSel();
   return el('div', { class: 'addbar' }, el('div', { class: 'in' },
     el('div', { class: 'ctl' }, sel || '', modeBtn, sel ? el('button', { class: 'btn mode', type: 'button', title: '把打勾的項目搬到選好的小群組', 'aria-label': '搬移打勾的項目', onclick: () => moveTicked(sel.value) }, 'Ｍ') : ''),
     el('div', { class: 'line' }, name, money ? '' : qty, ok),
@@ -958,7 +970,7 @@ function itemRow(it, n){
       where.value = curKey;
       row.append(el('div', { class: 'mvline' }, '放在', where));
     }
-    const money = !!(g.opts && g.opts.money);
+    const money = moneyOn(g);
     let dIn = null, aIn = null;
     if(money){
       dIn = el('input', { type: 'text', class: 'e-date', inputmode: 'numeric', maxlength: '10', value: it.date || '', placeholder: '日期 20261021', 'aria-label': '日期' });
@@ -986,7 +998,7 @@ function itemRow(it, n){
     return row;
   }
   const gm = group(view), metas = [];
-  if(gm && gm.opts && gm.opts.money){
+  if(moneyOn(gm)){
     if(it.date) metas.push(el('span', { class: 'meta' }, it.date));
     if(it.amt !== undefined && it.amt !== '') metas.push(el('span', { class: 'meta' }, fmtAmt(it.amt)));
   }
@@ -1199,14 +1211,14 @@ function openGroupMenu(g){
       if(c && !configured()){ toast('尚未設定 Firebase'); return; }
       close();
       renameGroup(g.id, name.value);
-      if(!g.locked && moneyChk.checked !== !!(g.opts && g.opts.money)){ g.opts = { ...(g.opts || {}), money: moneyChk.checked }; commit(g); }
+      if(!g.locked && moneyChk.checked !== moneyOn(g)){ g.opts = { ...(g.opts || {}), money: moneyChk.checked }; commit(g); }
       if(g.locked){ if(c) unlockWithCode(g, c); return; }
       if(c !== (g.code || '')){
         if(!c){ stopListen(g.id); g.code = ''; saveLocal(); render(); toast('已停止同步，雲端資料仍保留'); }
         else attachCode(g, c);
       }
     };
-    const moneyChk = el('input', { type: 'checkbox' }); moneyChk.checked = !!(g.opts && g.opts.money);
+    const moneyChk = el('input', { type: 'checkbox' }); moneyChk.checked = moneyOn(g);
     enterTo(name, save); enterTo(code, save);
     f.append(el('h2', {}, '群組選項'),
       el('p', {}, '群組名稱'), name,
