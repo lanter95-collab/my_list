@@ -593,8 +593,8 @@ function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
   if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
   const sub = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue(g.items.filter(isSub).map(subHue)) };
-  let last = -1; g.items.forEach((x, i) => { if(isSub(x)) last = i; });
-  if(last >= 0) g.items.splice(last + 1, 0, sub); else g.items.push(sub);        // 新的小群組緊接在其他小群組後面
+  const oldSubs = g.items.filter(isSub), plain = g.items.filter(x => !isSub(x));
+  g.items.splice(0, g.items.length, ...oldSubs, sub, ...plain);                   // 小群組一律排在最上方：先建的在上，新建的接在後面
   addTarget = sub.id; refocus = true;
   toast(`已建立「${name}」，接著新增的項目會放進去`);
   commit();
@@ -761,7 +761,17 @@ function bindEdit(root, inputs, save, cancel){
 const stopEdit = () => { editing = null; render(); };
 
 const letters = n => { let r = ''; n++; while(n > 0){ const m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; };   // 0→A, 25→Z, 26→AA
+/* 小群組一律排在最上方（維持彼此原有的先後順序），一般項目排在小群組下面。
+   適用所有群組：現有的、日後新建的、從雲端同步進來的、拖曳之後的，都會自動整理 */
+function sortSubsFirst(g){
+  const subs = g.items.filter(isSub), plain = g.items.filter(x => !isSub(x));
+  const ordered = [...subs, ...plain];
+  if(ordered.every((x, i) => x === g.items[i])) return false;
+  g.items.splice(0, g.items.length, ...ordered);
+  return true;
+}
 function renderGroup(app, g){
+  if(!g.locked && sortSubsFirst(g)){ saveLocal(); pushSoon(g); }
   const lv = leaves(g), done = lv.filter(i => i.done).length, all = lv.length > 0 && done === lv.length;
 
   /* 標題：點兩下修改 */
