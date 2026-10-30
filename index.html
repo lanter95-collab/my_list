@@ -144,8 +144,9 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
 .sub{--sub:hsl(var(--h,140) 55% 88%);--sub-soft:hsl(var(--h,140) 60% 94%);--sub-line:hsl(var(--h,140) 45% 62%)}
 .group{background:hsl(var(--h,200) 55% 95%);border-color:hsl(var(--h,200) 40% 82%)}
 @media (prefers-color-scheme: dark){
-  .sub{--sub:hsl(var(--h,140) 32% 23%);--sub-soft:hsl(var(--h,140) 28% 16%);--sub-line:hsl(var(--h,140) 35% 42%)}
-  .group{background:hsl(var(--h,200) 28% 17%);border-color:hsl(var(--h,200) 25% 28%)}
+  /* 深色模式：用高彩度、中低亮度的底色，維持繽紛，同時讓淺色文字清楚 */
+  .sub{--sub:hsl(var(--h,140) 58% 27%);--sub-soft:hsl(var(--h,140) 44% 20%);--sub-line:hsl(var(--h,140) 68% 50%);--muted:#cdd8df;--done:#b2c1cb}
+  .group{background:hsl(var(--h,200) 48% 22%);border-color:hsl(var(--h,200) 55% 36%)}
 }
 /* 項目照片（☁️ 上傳、10×10 縮圖、點開看大圖） */
 .pic{display:inline-flex;align-items:center;justify-content:center;position:relative;width:20px;height:28px;margin-left:1.6em;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
@@ -189,6 +190,7 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
   .addbar .a-amt{flex:1 1 0}
   .addbar .btn.plus{width:44px}
 }
+.num.code{min-width:0;white-space:nowrap;font-weight:500;letter-spacing:.02em}
 </style>
 </head>
 <body>
@@ -760,18 +762,22 @@ function bindEdit(root, inputs, save, cancel){
 }
 const stopEdit = () => { editing = null; render(); };
 
-const letters = n => { let r = ''; n++; while(n > 0){ const m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; };   // 0→A, 25→Z, 26→AA
-/* 小群組一律排在最上方（維持彼此原有的先後順序），一般項目排在小群組下面。
-   適用所有群組：現有的、日後新建的、從雲端同步進來的、拖曳之後的，都會自動整理 */
-function sortSubsFirst(g){
-  const subs = g.items.filter(isSub), plain = g.items.filter(x => !isSub(x));
-  const ordered = [...subs, ...plain];
-  if(ordered.every((x, i) => x === g.items[i])) return false;
-  g.items.splice(0, g.items.length, ...ordered);
-  return true;
+/* 小群組編號：「前綴-兩位數序號」，例如 CP-01、CP-02。前綴依群組名稱自動決定，也可在群組「⋯」裡自訂 */
+function prefixOf(g){
+  const p = g && g.opts && g.opts.prefix;
+  if(p) return p;
+  const n = norm(g && g.name);
+  if(/camping|露營/.test(n)) return 'CP';
+  if(/shopping|購物/.test(n)) return 'SP';
+  if(/travel|旅/.test(n)) return 'TV';
+  if(/q\s*&\s*a/.test(n)) return 'QA';
+  if(/to\s*do/.test(n)) return 'TD';
+  const l = (n.match(/[a-z]/g) || []).slice(0, 2).join('').toUpperCase();
+  return l.length === 2 ? l : 'GP';
 }
+const cleanPrefix = v => ((String(v || '').match(/[A-Za-z0-9]+/) || [''])[0]).toUpperCase().slice(0, 4);
+const subLabel = (g, i) => prefixOf(g) + '-' + String(i + 1).padStart(2, '0');
 function renderGroup(app, g){
-  if(!g.locked && sortSubsFirst(g)){ saveLocal(); pushSoon(g); }
   const lv = leaves(g), done = lv.filter(i => i.done).length, all = lv.length > 0 && done === lv.length;
 
   /* 標題：點兩下修改 */
@@ -801,7 +807,7 @@ function renderGroup(app, g){
   } else {
     const list = el('div', { class: 'list', 'data-container': 'root' });
     let ni = 0, ns = 0;
-    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, letters(ns++)) : itemRow(it, ++ni)));
+    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, subLabel(g, ns++)) : itemRow(it, ++ni)));
     app.append(list);
   }
   document.body.append(buildAddBar(g));
@@ -1074,14 +1080,14 @@ function subBlock(s, n){
   let head;
   if(editing && editing.id === s.id){
     const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
-    head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num' }, n + '.'), name,
+    head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num code' }, n), name,
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => head._save() }, '✓'));
     head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
   } else {
     const dn = s.items.filter(i => i.done).length;
     head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
       checkBox(done),
-      el('span', { class: 'num' }, n + '.'),
+      el('span', { class: 'num code' }, n),
       el('span', { class: 'txt' }, s.name),
       el('span', { class: 'cnt' }, s.items.length ? `${dn}/${s.items.length}` : ''),
       el('button', { class: 'mini fold', 'aria-label': s.collapsed ? '展開' : '收合', onclick: e => { e.stopPropagation(); if(!blocked()) toggleFold(s.id); } }, s.collapsed ? '▸' : '▾'),
@@ -1257,7 +1263,13 @@ function openGroupMenu(g){
       if(c && !configured()){ toast('尚未設定 Firebase'); return; }
       close();
       renameGroup(g.id, name.value);
-      if(!g.locked && kindSel.value !== kindOf(g)){ const o = { ...(g.opts || {}), kind: kindSel.value }; delete o.money; g.opts = o; commit(g); }
+      if(!g.locked){
+        const o = { ...(g.opts || {}) }; let ch = false;
+        if(kindSel.value !== kindOf(g)){ o.kind = kindSel.value; delete o.money; ch = true; }
+        const px = cleanPrefix(prefixIn.value);
+        if(px !== (o.prefix || '')){ if(px) o.prefix = px; else delete o.prefix; ch = true; }
+        if(ch){ g.opts = o; commit(g); }
+      }
       if(g.locked){ if(c) unlockWithCode(g, c); return; }
       if(c !== (g.code || '')){
         if(!c){ stopListen(g.id); g.code = ''; saveLocal(); render(); toast('已停止同步，雲端資料仍保留'); }
@@ -1267,12 +1279,16 @@ function openGroupMenu(g){
     const kindSel = el('select', { 'aria-label': '欄位類型' },
       el('option', { value: 'plain' }, '一般（名稱、數量）'), el('option', { value: 'money' }, '購物（日期、金額、數量）'), el('option', { value: 'todo' }, '待辦（日期，不用數量）'));
     kindSel.value = kindOf(g);
+    const prefixIn = el('input', { type: 'text', value: (g.opts && g.opts.prefix) || '', placeholder: prefixOf(g), maxlength: '6', autocapitalize: 'characters', autocomplete: 'off', 'aria-label': '小群組編號前綴' });
+    prefixIn.addEventListener('input', () => { prefixIn.value = cleanPrefix(prefixIn.value); });
     enterTo(name, save); enterTo(code, save);
     f.append(el('h2', {}, '群組選項'),
       el('p', {}, '群組名稱'), name,
       el('p', {}, '同步代碼：使用相同代碼的裝置會共用這個群組。每個群組要用不同的代碼；只想自己看的，就用只有你知道的代碼。至少 6 個字元。'), code,
       g.locked ? '' : el('p', {}, '欄位類型（名稱含 Shopping、To Do、Q&A 的群組會自動套用）'),
       g.locked ? '' : kindSel,
+      g.locked ? '' : el('p', {}, '小群組編號前綴（英文大寫，會自動變成 前綴-01、前綴-02…；留空 = 自動）'),
+      g.locked ? '' : prefixIn,
       el('div', { class: 'acts' },
         el('button', { class: 'btn danger', type: 'button', onclick: () => { close(); deleteGroupFlow(g); } }, 'DEL'),
         el('button', { class: 'btn', type: 'button', onclick: save }, 'SAVE')));
