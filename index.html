@@ -149,8 +149,9 @@ dialog select{width:100%;height:40px;font:inherit;font-size:16px;color:var(--ink
   .group{background:hsl(var(--h,200) 48% 22%);border-color:hsl(var(--h,200) 55% 36%)}
 }
 /* 項目照片（☁️ 上傳、10×10 縮圖、點開看大圖） */
-.pic{display:inline-flex;align-items:center;justify-content:center;position:relative;width:20px;height:28px;margin-left:1.6em;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
-.pic::after{content:"";position:absolute;inset:-4px -8px}
+.pic{display:inline-flex;align-items:center;justify-content:center;position:relative;width:16px;height:28px;margin-left:0;vertical-align:middle;font-size:14px;line-height:1;cursor:pointer;opacity:.75}
+.pic.first{margin-left:1.6em}
+.pic::after{content:"";position:absolute;inset:-4px -2px}
 .pic:hover,.pic:focus-visible{opacity:1}
 .pic img{width:10px;height:10px;border-radius:2px;object-fit:cover;box-shadow:0 0 0 1px var(--line);display:block}
 .viewer{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.9);display:flex;flex-direction:column;color:#fff}
@@ -198,6 +199,16 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 @media (prefers-color-scheme: dark){:root{--packblue:#8ccbff}}
 .pack .row.done .txt,.pack .row.done .qty{color:var(--packblue);text-decoration:none}
 .pack .row.done .txt{font-weight:500}
+.box.mark{background:#ffd84d;border-color:#e3a800}
+.box.mark svg{stroke:#d62828;opacity:1;transform:scale(1)}
+.toolbar{flex-wrap:wrap;row-gap:6px}
+.toolbar .undo{width:40px;padding:0;font-size:18px}
+.utoast{position:fixed;left:50%;transform:translateX(-50%);z-index:85;display:flex;align-items:center;gap:12px;background:var(--ink);color:var(--bg);padding:8px 8px 8px 14px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:92vw}
+.utoast button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;height:32px;padding:0 12px;font-size:14px;font-weight:500}
+/* 群組頁：標題列＋工具列固定在上方，下面的清單捲動 */
+.gtop{position:sticky;top:0;z-index:30;background:var(--bg);margin:-16px -16px 10px;padding:16px 16px 8px;border-bottom:1px solid var(--line)}
+.gtop header{margin:0 0 8px}
+.gtop .toolbar{margin:0 2px}
 </style>
 </head>
 <body>
@@ -610,13 +621,59 @@ function addSub(name){
   commit();
 }
 function toggleItem(id){ const r = find(group(view), id); if(r){ r.it.done = !r.it.done; commit(); } }
+/* ---------- 復原（針對一次改很多勾選的動作：全選／全部取消、小群組勾選框） ---------- */
+const undoStack = [];            // 只存在目前畫面，最多 20 筆，重新整理後清空
+function pushUndo(){
+  const g = group(view); if(!g) return;
+  const items = [];
+  g.items.forEach(it => {
+    if(isSub(it)){ items.push({ id: it.id, done: !!it.done, mark: !!it.mark }); it.items.forEach(c => items.push({ id: c.id, done: !!c.done })); }
+    else items.push({ id: it.id, done: !!it.done });
+  });
+  undoStack.push({ gid: g.id, items });
+  if(undoStack.length > 20) undoStack.shift();
+}
+const canUndo = g => undoStack.some(e => e.gid === g.id);
+function undoLast(){
+  const g = group(view); if(!g) return;
+  let k = -1; for(let i = undoStack.length - 1; i >= 0; i--) if(undoStack[i].gid === g.id){ k = i; break; }
+  if(k < 0){ toast('沒有可以復原的動作'); return; }
+  const [e] = undoStack.splice(k, 1);
+  e.items.forEach(rec => { const r = find(g, rec.id); if(r){ r.it.done = rec.done; if('mark' in rec) r.it.mark = rec.mark; } });
+  hideUndoToast(); commit(); toast('已復原');
+}
+let utimer = null;
+function hideUndoToast(){ clearTimeout(utimer); const n = $('#utoast'); if(n) n.remove(); }
+function showUndoToast(msg){
+  hideUndoToast();
+  const bh = ($('.addbar') || {}).offsetHeight || 0;
+  const n = el('div', { id: 'utoast', class: 'utoast', style: `bottom:${bh + 12}px` }, el('span', {}, msg), el('button', { type: 'button', onclick: undoLast }, '復原'));
+  document.body.append(n);
+  utimer = setTimeout(hideUndoToast, 8000);
+}
+
+/* 露營／旅遊的小群組勾選框：第 1 下＝黃底紅勾（只標記「這項要帶」，不動裡面的勾選）→ 第 2 下＝綠底白勾（全選）→ 第 3 下＝全部取消 */
+function cycleSub(id){
+  const r = find(group(view), id); if(!r) return;
+  const s = r.it, st = subDone(s) ? 2 : (s.mark ? 1 : 0);
+  pushUndo();
+  if(st === 0){ s.mark = true; }
+  else if(st === 1){ if(s.items.length) s.items.forEach(i => i.done = true); else s.done = true; s.mark = true; }
+  else { if(s.items.length) s.items.forEach(i => i.done = false); s.done = false; s.mark = false; }
+  commit();
+  if(st === 1 && s.items.length) showUndoToast(`已全選「${s.name}」`);
+  else if(st === 2 && s.items.length) showUndoToast(`已全部取消「${s.name}」`);
+}
 function toggleSub(id){
   const r = find(group(view), id); if(!r) return;
   const s = r.it;
   undoSnap = { id, kids: s.items.map(i => i.done), own: s.done };
-  if(s.items.length){ const v = !s.items.every(i => i.done); s.items.forEach(i => i.done = v); }
+  pushUndo();
+  let v = null;
+  if(s.items.length){ v = !s.items.every(i => i.done); s.items.forEach(i => i.done = v); }
   else s.done = !s.done;
   commit();
+  if(v !== null) showUndoToast(v ? `已全選「${s.name}」` : `已全部取消「${s.name}」`);
 }
 function undoSub(id){
   const r = find(group(view), id); if(!r || !undoSnap || undoSnap.id !== id) return;
@@ -634,7 +691,7 @@ function leavesVisible(g){
   return out;
 }
 function toggleNoCheck(id){ const r = find(group(view), id); if(r){ r.it.noCheck = !r.it.noCheck; commit(); } }
-function setAll(v){ const g = group(view); if(g){ leavesVisible(g).forEach(i => i.done = v); commit(); } }
+function setAll(v){ const g = group(view); if(g){ pushUndo(); leavesVisible(g).forEach(i => i.done = v); commit(); showUndoToast(v ? '已全選' : '已全部取消'); } }
 function removeById(id){
   const g = group(view); const r = find(g, id);
   if(r){ r.arr.splice(r.arr.indexOf(r.it), 1); commit(); }
@@ -652,8 +709,8 @@ function el(tag, attrs = {}, ...kids){
   kids.flat().forEach(k => e.append(k instanceof Node ? k : document.createTextNode(k)));
   return e;
 }
-function checkBox(on){
-  const b = el('span', { class: 'box' + (on ? ' on' : '') });
+function checkBox(on, mk){
+  const b = el('span', { class: 'box' + (on ? ' on' : '') + (mk ? ' mark' : '') });
   b.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="5 12.5 10 17.5 19 7"/></svg>';
   return b;
 }
@@ -699,7 +756,7 @@ function render(){
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
 }
-function goto(id){ view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
+function goto(id){ hideUndoToast(); view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
 
 function hue(id){ let h = 0; for(const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function toggleHomeView(){ homeView = homeView === 'list' ? 'cards' : 'list'; localStorage.setItem('mylists-homeview', homeView); render(); }
@@ -811,16 +868,20 @@ function renderGroup(app, g){
     title = el('h1', { title: '點兩下（手機：按住再放開）可修改名稱', onclick: () => { if(!blocked() && isDbl('__title')) startEdit(); } }, g.name);
     longPress(title, startEdit);
   }
-  app.append(el('header', {},
+  /* 上方（標題列＋工具列）固定不動，只有下面的清單內容會捲動 */
+  const top = el('div', { class: 'gtop' });
+  top.append(el('header', {},
     el('button', { class: 'icon-btn', onclick: () => goto(null), 'aria-label': '返回' }, '‹'),
     title, groupBadge(g),
     el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯')));
 
-  if(g.locked){ app.append(lockPanel(g)); return; }
-  app.append(el('div', { class: 'toolbar' },
+  if(g.locked){ app.append(top, lockPanel(g)); return; }
+  top.append(el('div', { class: 'toolbar' },
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all) }, checkBox(all), all ? '全部取消' : '全選'),
     el('button', { class: 'btn ghost imp', onclick: pickImport, 'aria-label': '從 txt 檔匯入' }, '匯入'),
+    el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: canUndo(g) ? null : 'disabled', title: '復原上一次的全選／取消', 'aria-label': '復原上一個動作' }, '↶'),
     el('span', { class: 'sum' }, lv.length ? `已完成 ${done} / ${lv.length}` : '')));
+  app.append(top);
 
   if(!g.items.length){
     app.append(el('div', { class: 'empty' }, '還沒有項目。在下方輸入內容按「新增」，要分類就先按「小群組」。'));
@@ -951,19 +1012,26 @@ function openImport(text){
   });
 }
 
-/* ---------- 項目照片（imgbb） ---------- */
+/* ---------- 項目照片（imgbb）：每個項目、小群組都可以放不限張數的照片 ---------- */
+const imgsOf = it => Array.isArray(it.imgs) ? it.imgs : (it.img ? [it.img] : []);      // 相容舊版只有一張的 img
+function setImgs(it, arr){ delete it.img; if(arr.length) it.imgs = arr; else delete it.imgs; }
 function picBtn(it){
-  const busy = uploadingId === it.id;
-  return el('span', { class: 'pic', role: 'button', tabindex: '0', 'aria-label': it.img ? '查看照片' : '上傳照片',
-    onclick: e => { e.stopPropagation(); if(blocked() || busy) return; it.img ? openViewer(it.id) : pickPhoto(it.id); },
-    onkeydown: e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); e.target.click(); } } },
-    busy ? '⏳' : it.img ? el('img', { src: it.img.t || it.img.u, alt: '', loading: 'lazy' }) : '☁️');
+  const list = imgsOf(it), busy = uploadingId === it.id, out = [];
+  const key = fn => e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); fn(); } };
+  list.forEach((im, i) => out.push(el('span', { class: 'pic thumb', role: 'button', tabindex: '0', 'aria-label': `查看照片 ${i + 1}/${list.length}`,
+    onclick: e => { e.stopPropagation(); if(blocked()) return; openViewer(it.id, i); }, onkeydown: key(() => openViewer(it.id, i)) },
+    el('img', { src: im.t || im.u, alt: '', loading: 'lazy' }))));
+  out.push(el('span', { class: 'pic add', role: 'button', tabindex: '0', 'aria-label': '上傳照片',
+    onclick: e => { e.stopPropagation(); if(blocked() || busy) return; pickPhoto(it.id); }, onkeydown: key(() => { if(!busy) pickPhoto(it.id); }) },
+    busy ? '⏳' : '☁️'));
+  out[0].classList.add('first');
+  return out;
 }
 function pickPhoto(id){
-  const inp = el('input', { type: 'file', accept: 'image/*', class: 'hide' });
+  const inp = el('input', { type: 'file', accept: 'image/*', multiple: 'multiple', class: 'hide' });
   const done = () => inp.remove();
   inp.addEventListener('cancel', done);
-  inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; done(); if(f) uploadPhoto(id, f); });
+  inp.addEventListener('change', () => { const fs = [...(inp.files || [])]; done(); if(fs.length) uploadPhotos(id, fs); });
   document.body.append(inp); inp.click();
 }
 async function shrink(file){
@@ -978,41 +1046,66 @@ async function shrink(file){
     return await new Promise(res => c.toBlob(b => res(b || file), 'image/jpeg', 0.9));
   }catch(e){ return file; }
 }
-async function uploadPhoto(id, file){
+async function uploadPhotos(id, files){
   const gid = view;
-  uploadingId = id; render(); toast('照片上傳中…');
-  try{
-    const blob = await shrink(file);
-    const fd = new FormData(); fd.append('image', blob, 'photo.jpg');
-    const res = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method: 'POST', body: fd });
-    const j = await res.json();
-    if(!j.success) throw new Error(j.error?.message || 'upload failed');
-    const d = j.data, g = group(gid), r = g && find(g, id);
-    uploadingId = null;
-    if(r){ r.it.img = { u: d.display_url || d.url, t: (d.thumb && d.thumb.url) || d.url, d: d.delete_url || '' }; commit(g); toast('照片已上傳'); }
-    else render();
-  }catch(e){ console.error(e); uploadingId = null; render(); toast('上傳失敗，請檢查網路後再試'); }
+  uploadingId = id; render();
+  let ok = 0;
+  for(let i = 0; i < files.length; i++){
+    toast(files.length > 1 ? `照片上傳中（${i + 1}/${files.length}）…` : '照片上傳中…');
+    try{
+      const blob = await shrink(files[i]);
+      const fd = new FormData(); fd.append('image', blob, 'photo.jpg');
+      const res = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method: 'POST', body: fd });
+      const j = await res.json();
+      if(!j.success) throw new Error(j.error?.message || 'upload failed');
+      const d = j.data, g = group(gid), r = g && find(g, id);
+      if(!r) break;
+      setImgs(r.it, [...imgsOf(r.it), { u: d.display_url || d.url, t: (d.thumb && d.thumb.url) || d.url, d: d.delete_url || '' }]);
+      ok++; commit(g);                                   // 每傳完一張就存起來，中途失敗也不會掉
+    }catch(e){ console.error(e); toast(`第 ${i + 1} 張上傳失敗，請檢查網路後再試`); break; }
+  }
+  uploadingId = null; render();
+  if(ok) toast(`已上傳 ${ok} 張照片`);
 }
-function openViewer(id){
-  const r = find(group(view), id); if(!r || !r.it.img) return;
-  const it = r.it;
-  const img = el('img', { src: it.img.u, alt: it.text || it.name });
+const uploadPhoto = (id, file) => uploadPhotos(id, [file]);
+function openViewer(id, idx = 0){
+  const list = () => { const r = find(group(view), id); return r ? imgsOf(r.it) : []; };
+  const r0 = find(group(view), id); if(!r0 || !list().length) return;
+  const label = r0.it.text || r0.it.name;
+  let i = Math.min(idx, list().length - 1);
+  const img = el('img', { alt: label });
   const box = el('div', { class: 'vbox' }, img);
+  const vt = el('span', { class: 'vt' }), foot = el('div', { class: 'vfoot' });
   const ov = el('div', { class: 'viewer', role: 'dialog', 'aria-label': '照片' });
-  const onKey = e => { if(e.key === 'Escape') close(); };
+  const onKey = e => { if(e.key === 'Escape') close(); else if(e.key === 'ArrowLeft') step(-1); else if(e.key === 'ArrowRight') step(1); };
   const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+  const prev = el('button', { class: 'btn ghost vb', type: 'button', 'aria-label': '上一張', onclick: () => step(-1) }, '‹');
+  const next = el('button', { class: 'btn ghost vb', type: 'button', 'aria-label': '下一張', onclick: () => step(1) }, '›');
+  function show(){
+    const L = list(); if(!L.length){ close(); return; }
+    i = Math.max(0, Math.min(i, L.length - 1));
+    img.src = L[i].u;
+    vt.textContent = label + (L.length > 1 ? `（${i + 1}/${L.length}）` : '');
+    prev.classList.toggle('hide', L.length < 2); next.classList.toggle('hide', L.length < 2);
+    foot.replaceChildren('點照片可切換「符合螢幕」與「原始大小」' + (L.length > 1 ? '，左右滑動換張' : ''),
+      L[i].d ? el('span', {}, '　·　', el('a', { href: L[i].d, target: '_blank', rel: 'noopener' }, 'imgbb 刪除頁 ↗')) : '');
+  }
+  function step(d){ const L = list(); if(L.length < 2) return; i = (i + d + L.length) % L.length; show(); }
   document.addEventListener('keydown', onKey);
   img.addEventListener('click', e => { e.stopPropagation(); box.classList.toggle('full'); });
   box.addEventListener('click', e => { if(e.target === box) close(); });
+  let tx = null;                                            // 手機左右滑動換張（放大成原始大小時不啟用，避免和捲動衝突）
+  box.addEventListener('touchstart', e => { tx = box.classList.contains('full') ? null : e.touches[0].clientX; }, { passive: true });
+  box.addEventListener('touchend', e => { if(tx === null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if(Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); });
   const del = () => askDelete('刪除這張照片？',
-    '照片會從這個項目移除。' + (it.img.d ? '如果也要從 imgbb 帳號徹底刪除，請先關閉這個視窗，再按照片下方的「imgbb 刪除頁」。' : ''),
-    () => { const r2 = find(group(view), id); if(r2){ r2.it.img = null; commit(); } close(); });
+    '照片會從這個項目移除。' + (list()[i] && list()[i].d ? '如果也要從 imgbb 帳號徹底刪除，請先關閉這個視窗，再按照片下方的「imgbb 刪除頁」。' : ''),
+    () => { const r2 = find(group(view), id); if(r2){ const L = imgsOf(r2.it).slice(); L.splice(i, 1); setImgs(r2.it, L); commit(); } show(); });
   ov.append(
-    el('div', { class: 'vbar' }, el('span', { class: 'vt' }, it.text || it.name),
+    el('div', { class: 'vbar' }, vt, prev, next,
       el('button', { class: 'btn warn vb', type: 'button', onclick: del }, 'DEL'),
       el('button', { class: 'btn ghost vb', type: 'button', onclick: close, 'aria-label': '關閉' }, '✕')),
-    box,
-    el('div', { class: 'vfoot' }, '點照片可切換「符合螢幕」與「原始大小」', it.img.d ? el('span', {}, '　·　', el('a', { href: it.img.d, target: '_blank', rel: 'noopener' }, 'imgbb 刪除頁 ↗')) : ''));
+    box, foot);
+  show();
   document.body.append(ov);
 }
 
@@ -1107,7 +1200,8 @@ function subBlock(s, n){
     head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
   } else {
     const dn = s.items.filter(i => i.done).length;
-    const hb = checkBox(done); if(hide) hb.style.visibility = 'hidden';
+    const pk = isPack(gv);
+    const hb = checkBox(done, pk && !done && !!s.mark); if(hide) hb.style.visibility = 'hidden';
     const isMoney = kindOf(gv) === 'money';
     head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
       hb,
@@ -1123,10 +1217,10 @@ function subBlock(s, n){
       if(blocked() || e.target.closest('.mini,.pic')) return;
       if(e.target.closest('.ncheck')){ toggleNoCheck(s.id); return; }
       if(e.target.closest('.txt')){
-        tapText(s.id, () => { if(!hide) toggleSub(s.id); }, () => { editing = { id: s.id, field: 'text' }; render(); });
+        tapText(s.id, () => { if(!hide) (pk ? cycleSub : toggleSub)(s.id); }, () => { editing = { id: s.id, field: 'text' }; render(); });
         return;
       }
-      if(!hide) toggleSub(s.id);
+      if(!hide) (pk ? cycleSub : toggleSub)(s.id);
     });
   }
   block.append(head);
@@ -1189,7 +1283,8 @@ function startDrag(x, y){
     ghost, off: y - rect.top, x, y, pid: p.id,
     scroller: setInterval(() => {
       if(!drag) return;
-      if(drag.y < 90) window.scrollBy(0, -12);
+      const topH = (document.querySelector('.gtop') || {}).offsetHeight || 0;
+      if(drag.y < topH + 50) window.scrollBy(0, -12);
       else if(drag.y > window.innerHeight - 150) window.scrollBy(0, 12);
       else return;
       moveDrag(drag.x, drag.y);
