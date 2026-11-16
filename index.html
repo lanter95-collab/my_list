@@ -193,8 +193,11 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 .num.code{min-width:0;white-space:nowrap;font-weight:500;letter-spacing:.02em}
 .ncheck{cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;padding:8px 4px}
 .ncheck.off{color:var(--ink);font-weight:700}
-.ckic{display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-radius:4px;vertical-align:middle}
-.ckic.off{border-style:dashed;opacity:.55}
+/* 露營／旅遊群組：打勾的項目顯示藍色文字，不加刪除線、不變淡 */
+:root{--packblue:#0b5cc4}
+@media (prefers-color-scheme: dark){:root{--packblue:#8ccbff}}
+.pack .row.done .txt,.pack .row.done .qty{color:var(--packblue);text-decoration:none}
+.pack .row.done .txt{font-weight:500}
 </style>
 </head>
 <body>
@@ -284,6 +287,7 @@ function find(g, id){
 }
 /* 群組欄位類型：plain 一般（數量）／money 購物（日期、金額、數量）／todo 待辦（日期，無數量）。
    名稱含 Shopping／購物 → 購物；To Do／Q&A → 待辦；可在群組「⋯」手動改 */
+const isPack = g => !!g && /camping|travel|露營|旅/.test(norm(g.name));   // 露營／旅遊類：打勾＝「有帶」，文字變藍色、不畫刪除線
 function kindOf(g){
   if(!g) return 'plain';
   const o = g.opts || {};
@@ -690,6 +694,7 @@ function render(){
     const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
   }
   app.classList.toggle('tall', !!(view && kindOf(group(view)) !== 'plain'));
+  app.classList.toggle('pack', !!(view && isPack(group(view))));
   refocus = false;
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
@@ -991,7 +996,7 @@ async function uploadPhoto(id, file){
 function openViewer(id){
   const r = find(group(view), id); if(!r || !r.it.img) return;
   const it = r.it;
-  const img = el('img', { src: it.img.u, alt: it.text });
+  const img = el('img', { src: it.img.u, alt: it.text || it.name });
   const box = el('div', { class: 'vbox' }, img);
   const ov = el('div', { class: 'viewer', role: 'dialog', 'aria-label': '照片' });
   const onKey = e => { if(e.key === 'Escape') close(); };
@@ -1003,7 +1008,7 @@ function openViewer(id){
     '照片會從這個項目移除。' + (it.img.d ? '如果也要從 imgbb 帳號徹底刪除，請先關閉這個視窗，再按照片下方的「imgbb 刪除頁」。' : ''),
     () => { const r2 = find(group(view), id); if(r2){ r2.it.img = null; commit(); } close(); });
   ov.append(
-    el('div', { class: 'vbar' }, el('span', { class: 'vt' }, it.text),
+    el('div', { class: 'vbar' }, el('span', { class: 'vt' }, it.text || it.name),
       el('button', { class: 'btn warn vb', type: 'button', onclick: del }, 'DEL'),
       el('button', { class: 'btn ghost vb', type: 'button', onclick: close, 'aria-label': '關閉' }, '✕')),
     box,
@@ -1109,13 +1114,13 @@ function subBlock(s, n){
       el('span', isMoney
         ? { class: 'num code ncheck' + (hide ? ' off' : ''), role: 'button', 'aria-pressed': String(hide), 'aria-label': hide ? '顯示勾選框' : '隱藏勾選框（表示已買齊）', title: hide ? '點一下顯示勾選框' : '點一下隱藏勾選框' }
         : { class: 'num code' }, n),
-      el('span', { class: 'txt' }, s.name),
+      el('span', { class: 'txt' }, s.name, picBtn(s)),
       el('span', { class: 'cnt' }, s.items.length ? `${dn}/${s.items.length}` : ''),
       el('button', { class: 'mini fold', 'aria-label': s.collapsed ? '展開' : '收合', onclick: e => { e.stopPropagation(); if(!blocked()) toggleFold(s.id); } }, s.collapsed ? '▸' : '▾'),
       el('button', { class: 'mini del', 'aria-label': '刪除小群組 ' + s.name, onclick: e => { e.stopPropagation(); if(blocked()) return;
         askDelete(`刪除小群組「${s.name}」？`, s.items.length ? `裡面的 ${s.items.length} 個項目也會一起刪除，無法復原。` : '刪除後無法復原。', () => removeById(s.id)); } }, '−'));
     head.addEventListener('click', e => {
-      if(blocked() || e.target.closest('.mini')) return;
+      if(blocked() || e.target.closest('.mini,.pic')) return;
       if(e.target.closest('.ncheck')){ toggleNoCheck(s.id); return; }
       if(e.target.closest('.txt')){
         tapText(s.id, () => { if(!hide) toggleSub(s.id); }, () => { editing = { id: s.id, field: 'text' }; render(); });
