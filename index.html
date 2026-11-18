@@ -78,8 +78,8 @@ input[type=text]{font:inherit;font-size:16px;color:var(--ink);background:var(--s
 .list>.row:last-child,.children>.row:last-child{border-bottom:0}
 .box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s;background:transparent;padding:0}
 .box svg{width:16px;height:16px;stroke:#fff;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:all .12s}
-.on>.box,.box.on{background:var(--tick);border-color:var(--tick)}
-.on>.box svg,.box.on svg{opacity:1;transform:scale(1)}
+.on>.box,.box.on{background:#ffd84d;border-color:#e3a800}
+.on>.box svg,.box.on svg{stroke:#d62828;opacity:1;transform:scale(1)}
 .num{flex:none;color:var(--muted);font-size:12px;min-width:1.8em;text-align:right;font-variant-numeric:tabular-nums}
 .txt{flex:1;padding:7px 0;font-size:12px;overflow-wrap:anywhere;min-width:0}
 .qty{flex:none;min-width:2.4em;text-align:right;color:var(--muted);padding:7px 2px;font-size:12px;font-variant-numeric:tabular-nums}
@@ -209,6 +209,16 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 .gtop{position:sticky;top:0;z-index:30;background:var(--bg);margin:-16px -16px 10px;padding:16px 16px 8px;border-bottom:1px solid var(--line)}
 .gtop header{margin:0 0 8px}
 .gtop .toolbar{margin:0 2px}
+/* 搬移模式：粉紅＝選取要搬的、淺灰＝已鎖定的原有勾 */
+.box.sel{background:#e5398a;border-color:#e5398a}
+.box.sel svg{stroke:#fff;opacity:1;transform:scale(1)}
+.on>.box.locked,.box.locked{background:var(--line);border-color:var(--line)}
+.on>.box.locked svg,.box.locked svg{stroke:#9aa8b2;opacity:1;transform:scale(1)}
+.btn.mode.move-on{background:#e5398a;color:#fff;border-color:#e5398a}
+.btn.mode[disabled]{opacity:.4}
+.master[disabled]{opacity:.45;cursor:not-allowed}
+.toolbar .sum.mv{color:#e5398a;font-weight:500}
+.addbar .mvhint{flex:1 1 0;min-width:0;font-size:13px;line-height:1.3;color:#e5398a}
 </style>
 </head>
 <body>
@@ -250,6 +260,7 @@ let view = (ui.view && state.groups.some(g => g.id === ui.view)) ? ui.view : nul
 let editing = null;              // { id, field:'text'|'qty' }，id='__title' 代表群組標題
 let refocus = false, undoSnap = null, pendingRender = false;
 let addTarget = (view && ui.t && ui.t[view]) || '', uploadingId = null;
+let moveMode = false, moveSel = new Set();     // 搬移模式：鎖住原有的勾，只勾選要搬的項目
 let homeView = localStorage.getItem('mylists-homeview') || 'list';
 let db = null;
 
@@ -595,21 +606,6 @@ function pickHue(used){            // 隨機挑色相，並盡量和已有的小
   }
   return best;
 }
-function moveTicked(destId){
-  const g = group(view); if(!g) return;
-  const dest = destId ? g.items.find(x => x.id === destId)?.items : g.items;
-  if(!dest) return;
-  const picked = [];
-  g.items.forEach(it => {
-    if(isSub(it)){ if(it.items !== dest && !boxesHidden(g, it)) it.items.forEach(c => { if(c.done) picked.push({ c, arr: it.items }); }); }
-    else if(it.done && g.items !== dest) picked.push({ c: it, arr: g.items });
-  });
-  if(!picked.length){ toast('請先勾選要搬移的項目，再按 Move'); return; }
-  picked.forEach(({ c, arr }) => { arr.splice(arr.indexOf(c), 1); c.done = false; dest.push(c); });
-  const nm = destId ? g.items.find(x => x.id === destId).name : '最上層';
-  toast(`已把 ${picked.length} 項搬到「${nm}」`);
-  commit();
-}
 function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
   if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
@@ -627,7 +623,7 @@ function pushUndo(){
   const g = group(view); if(!g) return;
   const items = [];
   g.items.forEach(it => {
-    if(isSub(it)){ items.push({ id: it.id, done: !!it.done, mark: !!it.mark }); it.items.forEach(c => items.push({ id: c.id, done: !!c.done })); }
+    if(isSub(it)){ items.push({ id: it.id, done: !!it.done, mark: isMarked(it) }); it.items.forEach(c => items.push({ id: c.id, done: !!c.done })); }
     else items.push({ id: it.id, done: !!it.done });
   });
   undoStack.push({ gid: g.id, items });
@@ -652,46 +648,58 @@ function showUndoToast(msg){
   utimer = setTimeout(hideUndoToast, 8000);
 }
 
-/* 露營／旅遊的小群組勾選框：第 1 下＝黃底紅勾（只標記「這項要帶」，不動裡面的勾選）→ 第 2 下＝綠底白勾（全選）→ 第 3 下＝全部取消 */
-function cycleSub(id){
+/* ---------- 勾選框的定義 ----------
+   項目、小群組的框各自獨立：點一下＝黃底紅勾，再點一下＝取消。小群組的勾只代表「這個大物件要準備」，不會動到裡面的勾。
+   只有最上方的「全選」才會一次全部打勾／全部取消。 */
+const isMarked = s => typeof s.mark === 'boolean' ? s.mark : subDone(s);      // 舊資料沿用原本的判斷
+function toggleMark(id){
   const r = find(group(view), id); if(!r) return;
-  const s = r.it, st = subDone(s) ? 2 : (s.mark ? 1 : 0);
-  pushUndo();
-  if(st === 0){ s.mark = true; }
-  else if(st === 1){ if(s.items.length) s.items.forEach(i => i.done = true); else s.done = true; s.mark = true; }
-  else { if(s.items.length) s.items.forEach(i => i.done = false); s.done = false; s.mark = false; }
+  const s = r.it, v = !isMarked(s);
+  s.mark = v; if(!s.items.length) s.done = v;
   commit();
-  if(st === 1 && s.items.length) showUndoToast(`已全選「${s.name}」`);
-  else if(st === 2 && s.items.length) showUndoToast(`已全部取消「${s.name}」`);
 }
-function toggleSub(id){
-  const r = find(group(view), id); if(!r) return;
-  const s = r.it;
-  undoSnap = { id, kids: s.items.map(i => i.done), own: s.done };
-  pushUndo();
-  let v = null;
-  if(s.items.length){ v = !s.items.every(i => i.done); s.items.forEach(i => i.done = v); }
-  else s.done = !s.done;
+
+/* ---------- 搬移模式（Ｍ）：原有的勾全部鎖住；另外勾選要搬的項目，選好目的地再按 ＋ ---------- */
+function setMoveMode(on){ moveMode = on; moveSel = new Set(); render(); }
+function toggleSelItem(id){ moveSel.has(id) ? moveSel.delete(id) : moveSel.add(id); render(); }
+function toggleSelSub(s){            // 批次：選取（或取消選取）這個小群組裡所有「沒打勾」的項目
+  const kids = s.items.filter(c => !c.done); if(!kids.length) return;
+  const allSel = kids.every(c => moveSel.has(c.id));
+  kids.forEach(c => allSel ? moveSel.delete(c.id) : moveSel.add(c.id));
+  render();
+}
+function moveSelected(destId){
+  const g = group(view); if(!g) return;
+  if(!moveSel.size){ toast('請先勾選要搬移的項目（粉紅色勾），再按 ＋'); return; }
+  const destSub = destId ? g.items.find(x => x.id === destId) : null;
+  const dest = destId ? destSub?.items : g.items;
+  if(!dest) return;
+  const order = [];
+  g.items.forEach(it => { if(isSub(it)) it.items.forEach(c => order.push({ c, arr: it.items })); else order.push({ c: it, arr: g.items }); });
+  let n = 0;
+  order.filter(o => moveSel.has(o.c.id) && !o.c.done && o.arr !== dest).forEach(o => { o.arr.splice(o.arr.indexOf(o.c), 1); dest.push(o.c); n++; });
+  moveSel = new Set();
+  const nm = destSub ? `「${destSub.name}」` : '最上層';
+  if(!n){ toast(`選取的項目已經在${nm}`); render(); return; }
+  toast(`已把 ${n} 項搬到${nm}`);
   commit();
-  if(v !== null) showUndoToast(v ? `已全選「${s.name}」` : `已全部取消「${s.name}」`);
 }
-function undoSub(id){
-  const r = find(group(view), id); if(!r || !undoSnap || undoSnap.id !== id) return;
-  r.it.items.forEach((i, k) => { if(k in undoSnap.kids) i.done = undoSnap.kids[k]; });
-  r.it.done = undoSnap.own;
-}
+
 /* 購物群組：小群組可以把勾選框收起來（表示整組已買齊）。收起來的項目不參與「全選」和「Ｍ」 */
 const boxesHidden = (g, sub) => kindOf(g) === 'money' && !!sub.noCheck;
-function leavesVisible(g){
+function checkables(g){              // 「全選」會動到的所有勾：項目＋小群組本身（勾選框被收起來的小群組除外）
   const out = [];
-  g.items.forEach(it => {
-    if(isSub(it)){ if(boxesHidden(g, it)) return; if(it.items.length) out.push(...it.items); else out.push(it); }
-    else out.push(it);
-  });
+  g.items.forEach(it => { if(isSub(it)){ if(boxesHidden(g, it)) return; out.push(it, ...it.items); } else out.push(it); });
   return out;
 }
+const isOn = x => isSub(x) ? isMarked(x) : !!x.done;
 function toggleNoCheck(id){ const r = find(group(view), id); if(r){ r.it.noCheck = !r.it.noCheck; commit(); } }
-function setAll(v){ const g = group(view); if(g){ pushUndo(); leavesVisible(g).forEach(i => i.done = v); commit(); showUndoToast(v ? '已全選' : '已全部取消'); } }
+function setAll(v){
+  const g = group(view); if(!g || moveMode) return;
+  pushUndo();
+  checkables(g).forEach(x => { if(isSub(x)){ x.mark = v; if(!x.items.length) x.done = v; } else x.done = v; });
+  commit(); showUndoToast(v ? '已全選' : '已全部取消');
+}
 function removeById(id){
   const g = group(view); const r = find(g, id);
   if(r){ r.arr.splice(r.arr.indexOf(r.it), 1); commit(); }
@@ -756,7 +764,7 @@ function render(){
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
 }
-function goto(id){ hideUndoToast(); view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
+function goto(id){ hideUndoToast(); moveMode = false; moveSel = new Set(); view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
 
 function hue(id){ let h = 0; for(const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function toggleHomeView(){ homeView = homeView === 'list' ? 'cards' : 'list'; localStorage.setItem('mylists-homeview', homeView); render(); }
@@ -855,7 +863,8 @@ function prefixOf(g){
 const cleanPrefix = v => ((String(v || '').match(/[A-Za-z0-9]+/) || [''])[0]).toUpperCase().slice(0, 4);
 const subLabel = (g, i) => prefixOf(g) + '-' + String(i + 1).padStart(2, '0');
 function renderGroup(app, g){
-  const lv = leaves(g), done = lv.filter(i => i.done).length, vis = leavesVisible(g), all = vis.length > 0 && vis.every(i => i.done);
+  if(moveMode && !g.items.some(isSub)){ moveMode = false; moveSel = new Set(); }
+  const lv = leaves(g), done = lv.filter(i => i.done).length, chk = checkables(g), all = chk.length > 0 && chk.every(isOn);
 
   /* 標題：點兩下修改 */
   let title;
@@ -877,10 +886,10 @@ function renderGroup(app, g){
 
   if(g.locked){ app.append(top, lockPanel(g)); return; }
   top.append(el('div', { class: 'toolbar' },
-    el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all) }, checkBox(all), all ? '全部取消' : '全選'),
+    el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all), disabled: moveMode ? 'disabled' : null }, checkBox(all), all ? '全部取消' : '全選'),
     el('button', { class: 'btn ghost imp', onclick: pickImport, 'aria-label': '從 txt 檔匯入' }, '匯入'),
-    el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: canUndo(g) ? null : 'disabled', title: '復原上一次的全選／取消', 'aria-label': '復原上一個動作' }, '↶'),
-    el('span', { class: 'sum' }, lv.length ? `已完成 ${done} / ${lv.length}` : '')));
+    el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的全選／取消', 'aria-label': '復原上一個動作' }, '↶'),
+    el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (lv.length ? `已完成 ${done} / ${lv.length}` : ''))));
   app.append(top);
 
   if(!g.items.length){
@@ -918,6 +927,7 @@ function buildAddBar(g){
     name.placeholder = ph; name.setAttribute('aria-label', ph);
   }
   const go = () => {
+    if(moveMode){ moveSelected(sel ? sel.value : ''); return; }
     const v = name.value; if(!v.trim()) return;
     if(subMode){ addSub(v); return; }
     let extra = null;
@@ -950,8 +960,13 @@ function buildAddBar(g){
   if(sel) sel.addEventListener('change', fitSel);
   paint(); fitSel();
   /* 由左到右：選單｜Ｇ｜Ｍ｜名稱｜日期｜金額｜數量｜＋（窄螢幕自動折成兩列，順序不變） */
-  const moveBtn = sel ? el('button', { class: 'btn mode', type: 'button', title: '把打勾的項目搬到選好的小群組', 'aria-label': '搬移打勾的項目', onclick: () => moveTicked(sel.value) }, 'Ｍ') : null;
+  const moveBtn = sel ? el('button', { class: 'btn mode' + (moveMode ? ' move-on' : ''), type: 'button', 'aria-pressed': String(moveMode), title: '搬移模式：鎖住原有的勾，另外勾選要搬的項目', 'aria-label': '搬移模式', onclick: () => setMoveMode(!moveMode) }, 'Ｍ') : null;
   const brk = () => el('span', { class: 'brk' });
+  if(moveMode && sel){                                   // 搬移模式：只留「選單、Ｍ、已選幾項、＋」，避免和新增項目混淆
+    modeBtn.disabled = true;
+    ok.setAttribute('aria-label', '搬移選取的項目');
+    return el('div', { class: 'addbar' }, el('div', { class: 'in' }, [sel, modeBtn, moveBtn, brk(), el('span', { class: 'mvhint' }, `已選 ${moveSel.size} 項，選好目的地後按 ＋ 搬移`), ok]));
+  }
   const kids = [];
   if(sel) kids.push(sel);
   kids.push(modeBtn);
@@ -1167,7 +1182,8 @@ function itemRow(it, n, hideBox){
   const gm = group(view), kd = kindOf(gm), metas = [];
   if(kd !== 'plain' && it.date) metas.push(el('span', { class: 'meta' }, it.date));
   if(kd === 'money' && it.amt !== undefined && it.amt !== '') metas.push(el('span', { class: 'meta' }, fmtAmt(it.amt)));
-  const showDone = !!it.done && !hideBox, cb = checkBox(showDone);
+  const showDone = !!it.done && !hideBox, cb = checkBox(moveMode && !hideBox ? false : showDone);
+  if(moveMode && !hideBox){ if(it.done) cb.classList.add('locked'); else if(moveSel.has(it.id)) cb.classList.add('sel'); }
   if(hideBox) cb.style.visibility = 'hidden';
   const row = el('div', { class: 'row' + (showDone ? ' done on' : ''), 'data-unit': it.id, role: hideBox ? null : 'checkbox', 'aria-checked': hideBox ? null : String(!!it.done), tabindex: '0' },
     cb,
@@ -1175,22 +1191,23 @@ function itemRow(it, n, hideBox){
     el('span', { class: 'txt' }, it.text, metas, picBtn(it)),
     el('span', { class: 'qty' }, kd !== 'todo' && it.qty ? '×' + it.qty : ''),
     el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
+  const act = () => { if(hideBox) return; if(moveMode){ if(!it.done) toggleSelItem(it.id); } else toggleItem(it.id); };   // 搬移模式：只能選「沒打勾」的
   row.addEventListener('click', e => {
     if(blocked() || e.target.closest('.del,.pic')) return;
     const t = e.target.closest('.txt,.qty');
     if(t){
       const field = t.classList.contains('qty') ? 'qty' : 'text';
-      tapText(it.id, () => { if(!hideBox) toggleItem(it.id); }, () => { editing = { id: it.id, field }; render(); });
+      tapText(it.id, act, () => { editing = { id: it.id, field }; render(); });
       return;
     }
-    if(!hideBox) toggleItem(it.id);
+    act();
   });
   row.addEventListener('keydown', e => { if((e.key === ' ' || e.key === 'Enter') && e.target === row){ e.preventDefault(); row.click(); } });
   return row;
 }
 
 function subBlock(s, n){
-  const gv = group(view), hide = boxesHidden(gv, s), done = subDone(s) && !hide;
+  const gv = group(view), hide = boxesHidden(gv, s), done = isMarked(s) && !hide;
   const block = el('div', { class: 'sub', 'data-unit': s.id, style: `--h:${subHue(s)}` });
   let head;
   if(editing && editing.id === s.id){
@@ -1200,8 +1217,10 @@ function subBlock(s, n){
     head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
   } else {
     const dn = s.items.filter(i => i.done).length;
-    const pk = isPack(gv);
-    const hb = checkBox(done, pk && !done && !!s.mark); if(hide) hb.style.visibility = 'hidden';
+    const hb = checkBox(moveMode && !hide ? false : done);
+    if(moveMode && !hide){ const kids = s.items.filter(c => !c.done); if(done) hb.classList.add('locked'); else if(kids.length && kids.every(c => moveSel.has(c.id))) hb.classList.add('sel'); }
+    if(hide) hb.style.visibility = 'hidden';
+    const hact = () => { if(hide) return; if(moveMode){ if(!done) toggleSelSub(s); } else toggleMark(s.id); };
     const isMoney = kindOf(gv) === 'money';
     head = el('div', { class: 'row subhead' + (done ? ' done on' : '') },
       hb,
@@ -1217,10 +1236,10 @@ function subBlock(s, n){
       if(blocked() || e.target.closest('.mini,.pic')) return;
       if(e.target.closest('.ncheck')){ toggleNoCheck(s.id); return; }
       if(e.target.closest('.txt')){
-        tapText(s.id, () => { if(!hide) (pk ? cycleSub : toggleSub)(s.id); }, () => { editing = { id: s.id, field: 'text' }; render(); });
+        tapText(s.id, hact, () => { editing = { id: s.id, field: 'text' }; render(); });
         return;
       }
-      if(!hide) (pk ? cycleSub : toggleSub)(s.id);
+      hact();
     });
   }
   block.append(head);
@@ -1241,7 +1260,7 @@ document.addEventListener('selectstart', e => { if(press || drag) e.preventDefau
 document.addEventListener('touchmove', e => { if(drag) e.preventDefault(); }, { passive: false });
 
 document.addEventListener('pointerdown', e => {
-  if(!view || drag) return;
+  if(!view || drag || moveMode) return;
   if(e.pointerType === 'mouse' && e.button !== 0) return;
   if(e.target.closest('.pic')) return;
   const grip = e.target.closest('.grip');
