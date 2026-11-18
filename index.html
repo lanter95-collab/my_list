@@ -230,6 +230,47 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 .pbtn::after{content:"";position:absolute;inset:-4px -2px}
 .pbtn:hover,.pbtn:focus-visible{opacity:1}
 .pbtn.on{color:var(--ink);font-weight:700;opacity:1}
+
+/* ===== 活動標題（群組頁，工具列下方） ===== */
+.trip{margin:8px -16px 0;padding:6px 16px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:700;min-height:42px;display:flex;align-items:center;overflow-wrap:anywhere;cursor:text;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.trip.ph{color:var(--muted);opacity:.6;font-weight:400}
+.trip input{height:40px;font-size:17px;font-weight:700;width:100%}
+
+/* ===== 生成網頁（A4 列印版） ===== */
+#pv{position:fixed;inset:0;z-index:95;background:#dfe5e9;display:flex;flex-direction:column;color:#111;color-scheme:light;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#pv *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pv-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));background:#fff;border-bottom:1px solid #c9d2d8}
+.pv-mode{flex:none;width:42px;height:42px;border:4px solid #2e9e6b;border-radius:8px;background:#fff;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.pv-mode.m1,.pv-mode.m2{background:#2e9e6b}
+.pv-mode svg{width:26px;height:26px;stroke:#fff;stroke-width:3.5;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.pv-cap{flex:1;min-width:0;font-size:13px;line-height:1.3;color:#333}
+.pv-bar .btn{height:40px;padding:0 12px;font-size:14px}
+.pv-scroll{flex:1;min-height:0;overflow:auto;padding:10px 8px 40px;display:block}
+.pv-sheet{width:210mm;box-sizing:border-box;padding:10mm;margin:0 auto;background:#fff;color:#111;box-shadow:0 2px 14px rgba(0,0,0,.22);--pvf:12px;font-family:"Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;line-height:1.4}
+.pv-head h1{margin:0;font-size:22px;text-align:center;font-weight:700;color:#111;overflow-wrap:anywhere}
+.pv-head hr{border:0;border-top:2px solid #111;margin:8px 0 8px}
+.pv-cols{width:100%;column-gap:5mm;column-rule:1px solid #cfd6db;font-size:var(--pvf)}
+.pv-g{margin-bottom:6px}
+.pv-sub{display:flex;align-items:center;gap:5px;font-weight:700;padding:2px 4px;margin-bottom:1px;break-after:avoid;break-inside:avoid;border-left:3px solid #2e9e6b;background:#e4f3e8}
+.pv-code{font-weight:500;color:#555;font-size:.85em;white-space:nowrap}
+.pv-row{display:flex;align-items:flex-start;gap:5px;padding:1.5px 4px;break-inside:avoid}
+.pv-box{flex:none;width:1.05em;height:1.05em;border:1.5px solid #333;border-radius:2px;margin-top:.17em;display:inline-flex;align-items:center;justify-content:center}
+.pv-box.st1{background:#2e9e6b;border-color:#2e9e6b}
+.pv-box.st2{background:#a7b3bc;border-color:#a7b3bc}
+.pv-box svg{width:82%;height:82%;stroke:#fff;stroke-width:3.5;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.pv-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.pv-q{flex:none;color:#444}
+.pv-meta{font-size:.75em;color:#666;margin-left:4px;white-space:nowrap}
+.pv-none{color:#777;text-align:center;padding:30px 0;font-size:14px}
+@media print{
+  @page{size:A4 portrait;margin:10mm}
+  body>*:not(#pv){display:none!important}
+  html,body{background:#fff!important;padding:0!important;margin:0!important}
+  #pv{position:static!important;display:block!important;background:#fff!important;overflow:visible!important}
+  #pv .pv-bar{display:none!important}
+  #pv .pv-scroll{overflow:visible!important;padding:0!important;background:#fff!important}
+  #pv .pv-sheet{zoom:1!important;width:auto!important;padding:0!important;margin:0!important;box-shadow:none!important}
+}
 </style>
 </head>
 <body>
@@ -881,6 +922,26 @@ function prefixOf(g){
 }
 const cleanPrefix = v => ((String(v || '').match(/[A-Za-z0-9]+/) || [''])[0]).toUpperCase().slice(0, 4);
 const subLabel = (g, i) => prefixOf(g) + '-' + String(i + 1).padStart(2, '0');
+
+/* 活動標題（工具列下方）：點兩下（手機：按住再放開）修改；沒填時顯示淺灰色「活動標題」。存在 g.opts.tripTitle，會跟著同步 */
+function tripBar(g){
+  const t = (g.opts && g.opts.tripTitle) || '';
+  if(editing && editing.id === '__trip'){
+    const inp = el('input', { type: 'text', class: 'e-name', value: t, placeholder: '活動標題', enterkeyhint: 'done', 'aria-label': '活動標題' });
+    const box = el('div', { class: 'trip' }, inp);
+    bindEdit(box, [inp], () => {
+      const gg = group(view);
+      if(gg){ const v = inp.value.trim(), o = { ...(gg.opts || {}) }; if(v) o.tripTitle = v; else delete o.tripTitle; gg.opts = o; }
+      editing = null; commit();
+    }, stopEdit);
+    return box;
+  }
+  const startEdit = () => { editing = { id: '__trip', field: 'text' }; render(); };
+  const box = el('div', { class: 'trip' + (t ? '' : ' ph'), title: '點兩下（手機：按住再放開）可修改活動標題', onclick: () => { if(!blocked() && isDbl('__trip')) startEdit(); } }, t || '活動標題');
+  longPress(box, startEdit);
+  return box;
+}
+
 function renderGroup(app, g){
   if(moveMode && !g.items.some(isSub)){ moveMode = false; moveSel = new Set(); }
   const { done, total } = counts(g), chk = checkables(g), all = chk.length > 0 && chk.every(x => stateOf(x) === 1);
@@ -909,7 +970,9 @@ function renderGroup(app, g){
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all), 'aria-label': all ? '全部取消' : '全選', title: all ? '全部取消' : '全選', disabled: moveMode ? 'disabled' : null }, mb),
     el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的全選／取消', 'aria-label': '復原上一個動作' }, '↶'),
+    isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openPrintView(g), title: '生成列印網頁（A4）', 'aria-label': '生成列印網頁' }, '📄') : '',
     el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
+  if(isPack(g)) top.append(tripBar(g));
   app.append(top);
 
   if(!g.items.length){
@@ -1169,6 +1232,92 @@ function openViewer(id, idx = 0){
     box, foot);
   show();
   document.body.append(ov);
+}
+
+/* ---------- 生成網頁（A4 列印版） ----------
+   標題＝活動標題（沒填就用群組名稱）；下方分隔線；小群組與項目全部展開，用多欄「先往下、滿了再往右」排進一張 A4。
+   左上角三段按鈕：□ 只列沒打勾的（空白清單）／■ 全部（預設）／☑ 只列有打勾的。 */
+const PV_SVG = '<svg viewBox="0 0 24 24"><polyline points="5 12.5 10 17.5 19 7"/></svg>';
+const PV_MODES = ['□　只列「沒打勾」的項目（空白清單）', '■　顯示全部（有打勾＋沒打勾）', '☑　只列「有打勾」的項目'];
+let pvMode = 1;
+function closePrintView(){ const o = $('#pv'); if(o) o.remove(); document.removeEventListener('keydown', pvKey); }
+function pvKey(e){ if(e.key === 'Escape') closePrintView(); }
+function buildSheet(g, sheet, mode){
+  sheet.innerHTML = '';
+  sheet.style.zoom = '';
+  const kd = kindOf(g);
+  const want = x => { const s = stateOf(x); return mode === 0 ? s === 0 : mode === 2 ? s === 1 : true; };
+  const mkBox = x => {
+    const s = mode === 0 ? 0 : stateOf(x);
+    const b = el('span', { class: 'pv-box' + (s === 1 ? ' st1' : s === 2 ? ' st2' : '') });
+    if(s === 1) b.innerHTML = PV_SVG;
+    return b;
+  };
+  const mkRow = it => {
+    const metas = [];
+    if(kd !== 'plain' && it.date) metas.push(el('span', { class: 'pv-meta' }, it.date));
+    if(kd === 'money' && it.amt !== undefined && it.amt !== '') metas.push(el('span', { class: 'pv-meta' }, fmtAmt(it.amt)));
+    return el('div', { class: 'pv-row' }, mkBox(it), el('span', { class: 'pv-t' }, it.text, metas),
+      kd !== 'todo' && it.qty ? el('span', { class: 'pv-q' }, '×' + it.qty) : '');
+  };
+  const head = el('div', { class: 'pv-head' }, el('h1', {}, (g.opts && g.opts.tripTitle) || g.name), el('hr'));
+  const cols = el('div', { class: 'pv-cols' });
+  let si = 0;
+  g.items.forEach(it => {
+    if(isSub(it)){
+      const label = subLabel(g, si++);
+      const kids = it.items.filter(want);
+      if(!kids.length && !want(it)) return;
+      const h = subHue(it);
+      cols.append(el('div', { class: 'pv-g' },
+        el('div', { class: 'pv-sub', style: `background:hsl(${h} 55% 90%);border-left-color:hsl(${h} 45% 50%)` }, mkBox(it), el('span', { class: 'pv-code' }, label), el('span', { class: 'pv-t' }, it.name)),
+        kids.map(mkRow)));
+    } else if(want(it)){
+      cols.append(mkRow(it));
+    }
+  });
+  if(!cols.children.length) cols.append(el('div', { class: 'pv-none' }, '（沒有符合的項目）'));
+  sheet.append(head, cols);
+}
+function fitSheet(sheet){
+  const cols = sheet.querySelector('.pv-cols'), head = sheet.querySelector('.pv-head');
+  const mm = 96 / 25.4;
+  const limit = 277 * mm - head.offsetHeight - 14;           // A4 高 297mm，扣掉上下各 10mm 邊界
+  const trySizes = [12, 11, 10, 9];
+  for(const sz of trySizes){
+    for(let n = 2; n <= 5; n++){
+      sheet.style.setProperty('--pvf', sz + 'px'); cols.style.columnCount = n;
+      if(cols.offsetHeight <= limit) return;                // 用最少的欄數、最大的字放得進一頁
+    }
+  }
+}
+function openPrintView(g){
+  closePrintView();
+  pvMode = 1;
+  const sheet = el('div', { class: 'pv-sheet' });
+  const mbtn = el('button', { class: 'pv-mode', type: 'button' });
+  const cap = el('span', { class: 'pv-cap' });
+  const paint = () => {
+    mbtn.className = 'pv-mode m' + pvMode;
+    mbtn.innerHTML = pvMode === 2 ? PV_SVG : '';
+    mbtn.setAttribute('aria-label', PV_MODES[pvMode]); mbtn.title = '點一下切換：□ → ■ → ☑';
+    cap.textContent = PV_MODES[pvMode];
+  };
+  const rebuild = () => {
+    const gg = group(g.id) || g;
+    buildSheet(gg, sheet, pvMode); fitSheet(sheet);
+    const sc = Math.min(1, (window.innerWidth - 16) / (210 * 96 / 25.4));
+    sheet.style.zoom = sc < 1 ? String(sc) : '';             // 手機畫面縮小預覽；列印時一律用原尺寸
+  };
+  mbtn.addEventListener('click', () => { pvMode = (pvMode + 1) % 3; paint(); rebuild(); });   // □ → ■ → ☑ → □
+  const ov = el('div', { id: 'pv', role: 'dialog', 'aria-label': '列印預覽' },
+    el('div', { class: 'pv-bar' }, mbtn, cap,
+      el('button', { class: 'btn', type: 'button', onclick: () => window.print(), 'aria-label': '列印' }, '🖨️ 列印'),
+      el('button', { class: 'btn ghost', type: 'button', onclick: closePrintView, 'aria-label': '關閉' }, '✕')),
+    el('div', { class: 'pv-scroll' }, sheet));
+  document.body.append(ov);
+  document.addEventListener('keydown', pvKey);
+  paint(); rebuild();
 }
 
 function lockPanel(g){
