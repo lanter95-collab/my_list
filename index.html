@@ -242,6 +242,23 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .addbar .btn.mode{font-size:18px}
 .addbar .btn.plus{font-size:20px}
 
+/* ===== 小小群組（第二層） ===== */
+.children .row.subhead{background:var(--sub)}
+.children>.sub{border-bottom:1px solid var(--line)}
+.children>.sub:last-child{border-bottom:0}
+.sub2 .children{margin-left:14px}
+.sub2>.subhead .txt{font-size:12px}
+.pv-gg{margin-left:10px;margin-bottom:3px}
+.pv-gg>.pv-sub{font-size:.95em;font-weight:600}
+
+/* ===== 工具列按鈕縮小（全選、匯入、復原、重整、生成網頁） ===== */
+.toolbar{gap:6px}
+.toolbar .master{height:34px;padding:0 5px}
+.toolbar .master .box{width:22px;height:22px;border-radius:7px}
+.toolbar .btn.imp,.toolbar .btn.imp:not(.undo){height:34px;min-width:34px;padding:0 6px;font-size:14px;border-radius:9px}
+.toolbar .btn.imp.undo{width:34px;padding:0;font-size:15px}
+.toolbar .sum{font-size:12px}
+
 /* ===== 活動標題（群組頁，工具列下方） ===== */
 .trip{margin:8px -16px 0;padding:6px 16px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:700;min-height:42px;display:flex;align-items:center;overflow-wrap:anywhere;cursor:text;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .trip.ph{color:var(--muted);opacity:.6;font-weight:400}
@@ -358,19 +375,25 @@ function longPress(node, fn, ms = 450){
   node.addEventListener('contextmenu', e => e.preventDefault());
 }
 const isSub = it => Array.isArray(it.items);
-const subDone = s => s.items.length ? s.items.every(i => i.done) : !!s.done;
-function leaves(g){
-  const out = [];
-  g.items.forEach(it => { if(isSub(it)){ if(it.items.length) out.push(...it.items); else out.push(it); } else out.push(it); });
+/* 結構最多兩層：小群組（大包包）→ 小小群組（小包包）→ 項目 */
+function leavesOf(arr, out = []){
+  arr.forEach(it => { if(isSub(it)){ if(it.items.length) leavesOf(it.items, out); else out.push(it); } else out.push(it); });
   return out;
 }
-function find(g, id){
-  for(const it of g.items){
-    if(it.id === id) return { it, arr: g.items };
-    if(isSub(it)){ const c = it.items.find(x => x.id === id); if(c) return { it: c, arr: it.items }; }
+function allNodes(arr, out = []){ arr.forEach(it => { out.push(it); if(isSub(it)) allNodes(it.items, out); }); return out; }
+const subDone = s => { const lv = leavesOf(s.items); return lv.length ? lv.every(i => i.done) : !!s.done; };
+const leaves = g => leavesOf(g.items);
+function findIn(arr, id){
+  for(const it of arr){
+    if(it.id === id) return { it, arr };
+    if(isSub(it)){ const r = findIn(it.items, id); if(r) return r; }
   }
   return null;
 }
+const find = (g, id) => findIn(g.items, id);
+const ownerOf = (g, arr) => arr === g.items ? null : (allNodes(g.items).find(x => isSub(x) && x.items === arr) || null);
+const flatSubs = g => { const out = []; g.items.forEach(it => { if(isSub(it)){ out.push({ s: it, d: 0 }); it.items.filter(isSub).forEach(c => out.push({ s: c, d: 1 })); } }); return out; };
+const subOptions = g => flatSubs(g).map(o => el('option', { value: o.s.id }, (o.d ? '　└ ' : '') + o.s.name));
 /* 群組欄位類型：plain 一般（數量）／money 購物（日期、金額、數量）／todo 待辦（日期，無數量）。
    名稱含 Shopping／購物 → 購物；To Do／Q&A → 待辦；可在群組「⋯」手動改 */
 const isPack = g => !!g && /camping|travel|露營|旅/.test(norm(g.name));   // 露營／旅遊類：打勾＝「有帶」，文字變藍色、不畫刪除線
@@ -623,8 +646,8 @@ function openJoin(){
 /* 名稱不可重複（不分大小寫、全半形、前後空白） */
 const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 const groupNameTaken = (name, exceptId) => state.groups.some(x => x.id !== exceptId && norm(x.name) === norm(name));
-const subNameTaken = (g, name, exceptId) => g.items.some(x => isSub(x) && x.id !== exceptId && norm(x.name) === norm(name));
-const itemNameTaken = (g, name, exceptId) => g.items.some(x => isSub(x) ? x.items.some(c => c.id !== exceptId && norm(c.text) === norm(name)) : (x.id !== exceptId && norm(x.text) === norm(name)));
+const subNameTaken = (g, name, exceptId, arr) => (arr || g.items).some(x => isSub(x) && x.id !== exceptId && norm(x.name) === norm(name));   // 同一層不可重名
+const itemNameTaken = (g, name, exceptId) => leavesOf(g.items).some(c => !isSub(c) && c.id !== exceptId && norm(c.text) === norm(name));
 function addGroup(name){ name = name.trim(); if(!name) return; if(groupNameTaken(name)){ toast(`已有同名群組「${name}」（大小寫視為相同）`); return; } state.groups.push({ id: uid(), name, items: [], nameT: Date.now() }); commit(); reconcileIndex(); }
 function renameGroup(id, name){ name = name.trim(); const g = group(id); if(g && name && norm(name) !== norm(g.name) && groupNameTaken(name, id)){ toast(`已有同名群組「${name}」，名稱未更改`); return; } if(g && name){ g.name = name; g.nameT = Date.now(); commit(g); reconcileIndex(); } }
 function deleteGroup(id){ stopListen(id); state.groups = state.groups.filter(g => g.id !== id); state.deleted = [...(state.deleted || []), id]; view = null; commit(); reconcileIndex(); }
@@ -641,7 +664,8 @@ function parseLine(t){
 }
 function addItems(key, raw, qtyRaw, extra){
   const g = group(view); if(!g) return;
-  const target = key === 'root' ? g.items : g.items.find(x => x.id === key)?.items;
+  const tr = key === 'root' ? null : findIn(g.items, key);
+  const target = key === 'root' ? g.items : (tr && isSub(tr.it) ? tr.it.items : null);
   if(!target) return;
   const multi = /\r?\n/.test(raw);                     // 多行貼上：只用換行分隔（名稱裡的頓號不會被拆開）
   const parts = (multi ? raw.split(/\r?\n/) : raw.split(/、|，|,/)).map(x => x.trim()).filter(Boolean);
@@ -672,6 +696,20 @@ function pickHue(used){            // 隨機挑色相，並盡量和已有的小
 }
 function addSub(name){
   const g = group(view); name = name.trim(); if(!g || !name) return;
+  /* 下方選單選了某個小群組 → 建立在它裡面（小小群組，只到這一層）；選 --- → 建立在最上層 */
+  const pr = addTarget ? findIn(g.items, addTarget) : null;
+  const parent = pr && isSub(pr.it) ? pr.it : null;
+  if(parent){
+    if(pr.arr !== g.items){ toast('小小群組裡面不能再建立下一層'); return; }
+    if(subNameTaken(g, name, null, parent.items)){ toast(`「${parent.name}」裡已有同名小小群組「${name}」`); return; }
+    const ss = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue([subHue(parent), ...parent.items.filter(isSub).map(subHue)]) };
+    const kidSubs = parent.items.filter(isSub), kidPlain = parent.items.filter(x => !isSub(x));
+    parent.items.splice(0, parent.items.length, ...kidSubs, ss, ...kidPlain);
+    addTarget = ss.id; refocus = true;
+    toast(`已在「${parent.name}」裡建立小小群組「${name}」，接著新增的項目會放進去`);
+    commit();
+    return;
+  }
   if(subNameTaken(g, name)){ toast(`已有同名小群組「${name}」（大小寫視為相同）`); return; }
   const sub = { id: uid(), name, items: [], collapsed: false, done: false, hue: pickHue(g.items.filter(isSub).map(subHue)) };
   const oldSubs = g.items.filter(isSub), plain = g.items.filter(x => !isSub(x));
@@ -685,11 +723,7 @@ function toggleItem(id){ const r = find(group(view), id); if(r){ pushUndo(); set
 const undoStack = [];            // 只存在目前畫面，最多 6 筆，重新整理後清空
 function pushUndo(){
   const g = group(view); if(!g) return;
-  const items = [];
-  g.items.forEach(it => {
-    items.push({ id: it.id, st: stateOf(it) });
-    if(isSub(it)) it.items.forEach(c => items.push({ id: c.id, st: stateOf(c) }));
-  });
+  const items = allNodes(g.items).map(x => ({ id: x.id, st: stateOf(x) }));
   undoStack.push({ gid: g.id, items });
   if(undoStack.length > 6) undoStack.shift();
 }
@@ -700,6 +734,7 @@ function undoLast(){
   if(k < 0){ toast('沒有可以復原的動作'); return; }
   const [e] = undoStack.splice(k, 1);
   e.items.forEach(rec => { const r = find(g, rec.id); if(r) setState(r.it, rec.st); });
+  if(e.order) restoreOrder(g, e.order);
   hideUndoToast(); commit(); toast('已復原');
 }
 let utimer = null;
@@ -735,7 +770,7 @@ function counts(g){                 // 「不帶」的不算進總數
 function setMoveMode(on){ moveMode = on; moveSel = new Set(); render(); }
 function toggleSelItem(id){ moveSel.has(id) ? moveSel.delete(id) : moveSel.add(id); render(); }
 function toggleSelSub(s){            // 批次：選取（或取消選取）這個小群組裡所有「沒打勾」的項目
-  const kids = s.items.filter(c => stateOf(c) === 0); if(!kids.length) return;
+  const kids = leavesOf(s.items).filter(c => !isSub(c) && stateOf(c) === 0); if(!kids.length) return;
   const allSel = kids.every(c => moveSel.has(c.id));
   kids.forEach(c => allSel ? moveSel.delete(c.id) : moveSel.add(c.id));
   render();
@@ -743,11 +778,13 @@ function toggleSelSub(s){            // 批次：選取（或取消選取）這�
 function moveSelected(destId){
   const g = group(view); if(!g) return;
   if(!moveSel.size){ toast('請先勾選要搬移的項目（粉紅色勾），再按 🟢'); return; }
-  const destSub = destId ? g.items.find(x => x.id === destId) : null;
+  const dr = destId ? findIn(g.items, destId) : null;
+  const destSub = dr && isSub(dr.it) ? dr.it : null;
   const dest = destId ? destSub?.items : g.items;
   if(!dest) return;
   const order = [];
-  g.items.forEach(it => { if(isSub(it)) it.items.forEach(c => order.push({ c, arr: it.items })); else order.push({ c: it, arr: g.items }); });
+  const collect = arr => arr.forEach(it => { if(isSub(it)) collect(it.items); else order.push({ c: it, arr }); });
+  collect(g.items);
   let n = 0;
   order.filter(o => moveSel.has(o.c.id) && stateOf(o.c) === 0 && o.arr !== dest).forEach(o => { o.arr.splice(o.arr.indexOf(o.c), 1); dest.push(o.c); n++; });
   moveSel = new Set();
@@ -761,7 +798,8 @@ function moveSelected(destId){
 const boxesHidden = (g, sub) => kindOf(g) === 'money' && !!sub.noCheck;
 function checkables(g){              // 「全選」會動到的所有勾：項目＋小群組本身（勾選框被收起來的小群組除外）
   const out = [];
-  g.items.forEach(it => { if(isSub(it)){ if(boxesHidden(g, it)) return; out.push(it, ...it.items); } else out.push(it); });
+  const rec = arr => arr.forEach(it => { if(isSub(it)){ if(boxesHidden(g, it)) return; out.push(it); rec(it.items); } else out.push(it); });
+  rec(g.items);
   return out;
 }
 function toggleNoCheck(id){ const r = find(group(view), id); if(r){ r.it.noCheck = !r.it.noCheck; commit(); } }
@@ -933,7 +971,8 @@ function prefixOf(g){
   return l.length === 2 ? l : 'GP';
 }
 const cleanPrefix = v => ((String(v || '').match(/[A-Za-z0-9]+/) || [''])[0]).toUpperCase().slice(0, 4);
-const subLabel = (g, i) => prefixOf(g) + '-' + String(i + 1).padStart(2, '0');
+const subNum = i => String(i + 1).padStart(2, '0');
+const subLabel = (g, i) => prefixOf(g) + '-' + subNum(i);
 
 /* 活動標題（工具列下方）：點兩下（手機：按住再放開）修改；沒填時顯示淺灰色「活動標題」。存在 g.opts.tripTitle，會跟著同步 */
 function tripBar(g){
@@ -982,6 +1021,7 @@ function renderGroup(app, g){
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all), 'aria-label': all ? '全部取消' : '全選', title: all ? '全部取消' : '全選', disabled: moveMode ? 'disabled' : null }, mb),
     el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的全選／取消', 'aria-label': '復原上一個動作' }, '↶'),
+    isPack(g) ? el('button', { class: 'btn ghost imp', onclick: tidyGroup, title: '重整：打勾的往上、沒打勾的往下、灰底的最下', 'aria-label': '重整排序', disabled: moveMode ? 'disabled' : null }, '🧹') : '',
     isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openPrintView(g), title: '生成列印網頁（A4）', 'aria-label': '生成列印網頁' }, '📄') : '',
     el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
   if(isPack(g)) top.append(tripBar(g));
@@ -992,21 +1032,21 @@ function renderGroup(app, g){
   } else {
     const list = el('div', { class: 'list', 'data-container': 'root' });
     let ni = 0, ns = 0;
-    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, subLabel(g, ns++)) : itemRow(it, ++ni)));
+    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, subLabel(g, ns), 0, false, subNum(ns++)) : itemRow(it, ++ni)));
     app.append(list);
   }
   document.body.append(buildAddBar(g));
 }
 
 function buildAddBar(g){
-  const subs = g.items.filter(isSub);
+  const subs = flatSubs(g).map(o => o.s);
   const kind = kindOf(g), hasD = kind !== 'plain', hasA = kind === 'money', hasQ = kind !== 'todo';
   if(!subs.some(s => s.id === addTarget)) addTarget = '';
   let subMode = false;
   const sel = subs.length ? el('select', { class: 'a-sel', 'aria-label': '放入哪個小群組' },
-    el('option', { value: '' }, '---'), subs.map(s => el('option', { value: s.id }, s.name))) : null;
+    el('option', { value: '' }, '---'), subOptions(g)) : null;
   if(sel) sel.value = addTarget;
-  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組', 'aria-label': '建立小群組' }, '🗂️');
+  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組（下方選單選了某個小群組時，會建立在它裡面）', 'aria-label': '建立小群組' }, '🗂️');
   const name = el('input', { type: 'text', class: 'a-name', enterkeyhint: 'done' });
   const qty = hasQ ? el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' }) : null;
   const date = hasD ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期', title: '西元年月日，例如 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
@@ -1016,9 +1056,9 @@ function buildAddBar(g){
   function paint(){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
     [qty, date, amt].forEach(x => x && x.classList.toggle('hide', subMode));
-    if(sel) sel.disabled = subMode;
+    /* 建立小群組時選單仍可選：選了某個小群組＝建立在它裡面（小小群組）；選 --- ＝建立在最上層 */
     ok.setAttribute('aria-label', subMode ? '建立小群組' : '新增項目');
-    const ph = subMode ? '輸入小群組名稱' : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
+    const ph = subMode ? (addTarget ? `在「${subName()}」裡建立小小群組` : '輸入小群組名稱') : (addTarget ? `新增到「${subName()}」` : '輸入清單內容');
     name.placeholder = ph; name.setAttribute('aria-label', ph);
   }
   const go = () => {
@@ -1099,9 +1139,9 @@ function openImport(text){
   all.forEach(l => { const k = norm(l.text); if(!seen.has(k) && !itemNameTaken(g, l.text)){ seen.add(k); lines.push(l); } });
   const skipped = all.length - lines.length;
   if(!lines.length){ toast('檔案裡的項目都已經存在，沒有可匯入的'); return; }
-  const subs = g.items.filter(isSub);
+  const subs = flatSubs(g).map(o => o.s);
   openDialog((f, close) => {
-    const dest = el('select', { 'aria-label': '匯入到哪裡' }, el('option', { value: '' }, '最上層（不在小群組）'), subs.map(x => el('option', { value: x.id }, x.name)));
+    const dest = el('select', { 'aria-label': '匯入到哪裡' }, el('option', { value: '' }, '最上層（不在小群組）'), subOptions(g));
     dest.value = subs.some(x => x.id === addTarget) ? addTarget : '';
     const peek = lines.slice(0, 3).map(l => l.text + (l.qty ? '×' + l.qty : '')).join('、') + (lines.length > 3 ? '…' : '');
     f.append(el('h2', {}, `匯入 ${lines.length} 個項目`),
@@ -1113,7 +1153,8 @@ function openImport(text){
       el('button', { class: 'btn', type: 'button', onclick: () => {
         close();
         const gg = group(view); if(!gg) return;
-        const target = dest.value ? gg.items.find(x => x.id === dest.value)?.items : gg.items;
+        const dr = dest.value ? findIn(gg.items, dest.value) : null;
+        const target = dest.value ? (dr && isSub(dr.it) ? dr.it.items : null) : gg.items;
         if(!target) return;
         let n = 0;
         lines.forEach(l => { if(!itemNameTaken(gg, l.text)){ target.push({ id: uid(), text: l.text, qty: l.qty, done: false }); n++; } });
@@ -1122,31 +1163,49 @@ function openImport(text){
   });
 }
 
-/* ---------- 露營／旅遊：小群組置頂（⤒）／移到最下方（⤓）。只是「搬一次」，不鎖定位置，之後仍可自由拖曳 ---------- */
-const pinRun = g => { let n = 0; while(n < g.items.length && isSub(g.items[n]) && g.items[n].pin) n++; return n; };   // 最上方連續置頂的小群組數
-function pinTop(id){
+/* ---------- 露營／旅遊：小群組 ↑ ↓ 每按一下只移動一格（和同一層的上一個／下一個小群組對調） ---------- */
+function moveStep(id, dir){
   const g = group(view); if(!g) return;
-  const idx = g.items.findIndex(x => x.id === id); if(idx < 0) return;
-  const s = g.items[idx];
-  if(s.pin && idx < pinRun(g)){ delete s.pin; commit(); return; }       // 已在置頂區：再點一次＝取消置頂（位置不變）
-  g.items.splice(idx, 1);
-  s.pin = true; g.items.splice(pinRun(g), 0, s);                       // 新置頂的排在已置頂的後面，不會擠掉原本的第 1 個
-  commit();
-}
-function pinBottom(id){
-  const g = group(view); if(!g) return;
-  const idx = g.items.findIndex(x => x.id === id); if(idx < 0) return;
-  const s = g.items.splice(idx, 1)[0]; delete s.pin;
-  let last = -1; g.items.forEach((x, i) => { if(isSub(x)) last = i; });
-  g.items.splice(last + 1, 0, s);                                      // 所有小群組的最下方（不是整張清單的最下方）
+  const r = find(g, id); if(!r) return;
+  const arr = r.arr, i = arr.indexOf(r.it);
+  let j = i + dir;
+  while(j >= 0 && j < arr.length && !isSub(arr[j])) j += dir;          // 只和同一層的小群組互換位置
+  if(j < 0 || j >= arr.length){ toast(dir < 0 ? '已經在最上面了' : '已經在最下面了'); return; }
+  [arr[i], arr[j]] = [arr[j], arr[i]];
   commit();
 }
 function pinBtns(s, g){
-  const idx = g.items.indexOf(s), pinned = !!s.pin && idx < pinRun(g);
   const mk = (cls, txt, label, fn) => el('span', { class: 'pbtn ' + cls, role: 'button', tabindex: '0', 'aria-label': label, title: label,
     onclick: e => { e.stopPropagation(); if(blocked() || moveMode) return; fn(); },
     onkeydown: e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); if(!moveMode) fn(); } } }, txt);
-  return [mk('bot', '⤓', '移到所有小群組的最下方', () => pinBottom(s.id)), mk('top' + (pinned ? ' on' : ''), '⤒', pinned ? '取消置頂' : '置頂（排在已置頂的後面）', () => pinTop(s.id))];
+  return [mk('bot', '↓', '往下移一格', () => moveStep(s.id, 1)), mk('top', '↑', '往上移一格', () => moveStep(s.id, -1))];
+}
+
+/* ---------- 重整：有打勾的往上靠齊 → 沒打勾的 → 灰底（不帶）的在最下面；小群組、小小群組、裡面的項目都一樣（同狀態維持原本順序） ---------- */
+function orderSnap(g){
+  const m = { root: g.items.map(x => x.id) };
+  allNodes(g.items).forEach(x => { if(isSub(x)) m[x.id] = x.items.map(c => c.id); });
+  return m;
+}
+function restoreOrder(g, m){
+  const map = new Map(allNodes(g.items).map(x => [x.id, x]));
+  const re = (arr, ids) => { if(!ids) return; const ord = ids.map(i => map.get(i)).filter(Boolean); if(ord.length === arr.length) arr.splice(0, arr.length, ...ord); };
+  re(g.items, m.root);
+  allNodes(g.items).forEach(x => { if(isSub(x)) re(x.items, m[x.id]); });
+}
+function tidyGroup(){
+  const g = group(view); if(!g || moveMode) return;
+  undoStack.push({ gid: g.id, items: [], order: orderSnap(g) });
+  if(undoStack.length > 6) undoStack.shift();
+  const rank = x => { const s = stateOf(x); return s === 1 ? 0 : s === 0 ? 1 : 2; };
+  const by = a => a.map((x, i) => ({ x, i })).sort((p, q) => rank(p.x) - rank(q.x) || p.i - q.i).map(o => o.x);
+  const sortArr = arr => {
+    const subs = arr.filter(isSub), plain = arr.filter(x => !isSub(x));
+    arr.splice(0, arr.length, ...by(subs), ...by(plain));
+    subs.forEach(s => sortArr(s.items));
+  };
+  sortArr(g.items);
+  commit(); toast('已重整（可按 ↶ 復原）');
 }
 
 /* ---------- 項目照片（imgbb）：每個項目、小群組都可以放不限張數的照片 ---------- */
@@ -1277,15 +1336,22 @@ function buildSheet(g, sheet, mode){
   const head = el('div', { class: 'pv-head' }, el('h1', {}, (g.opts && g.opts.tripTitle) || g.name), el('hr'));
   const cols = el('div', { class: 'pv-cols' });
   let si = 0;
+  const subEl = (s, label, num, depth) => {
+    const kids = []; let k = 0;
+    s.items.forEach(c => {
+      if(isSub(c)){ const e = subEl(c, num + '-' + (++k), num, depth + 1); if(e) kids.push(e); }
+      else if(want(c)) kids.push(mkRow(c));
+    });
+    if(!kids.length && !want(s)) return null;
+    const h = subHue(s);
+    return el('div', { class: 'pv-g' + (depth ? ' pv-gg' : '') },
+      el('div', { class: 'pv-sub', style: `background:hsl(${h} 55% 90%);border-left-color:hsl(${h} 45% 50%)` }, mkBox(s), el('span', { class: 'pv-code' }, label), el('span', { class: 'pv-t' }, s.name)),
+      kids);
+  };
   g.items.forEach(it => {
     if(isSub(it)){
-      const label = subLabel(g, si++);
-      const kids = it.items.filter(want);
-      if(!kids.length && !want(it)) return;
-      const h = subHue(it);
-      cols.append(el('div', { class: 'pv-g' },
-        el('div', { class: 'pv-sub', style: `background:hsl(${h} 55% 90%);border-left-color:hsl(${h} 45% 50%)` }, mkBox(it), el('span', { class: 'pv-code' }, label), el('span', { class: 'pv-t' }, it.name)),
-        kids.map(mkRow)));
+      const label = subLabel(g, si), num = subNum(si); si++;
+      const e = subEl(it, label, num, 0); if(e) cols.append(e);
     } else if(want(it)){
       cols.append(mkRow(it));
     }
@@ -1364,11 +1430,11 @@ function itemRow(it, n, hideBox){
     });
     const row = el('div', { class: 'row editing', 'data-unit': it.id }, el('span', { class: 'num' }, n + '.'), name, need || '', eQ ? el('span', { style: 'color:var(--muted)' }, '/') : '', qty || '',
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => row._save() }, '✓'));
-    const g = group(view), cur = find(g, it.id), subs = g.items.filter(isSub);
-    const curKey = cur && cur.arr !== g.items ? g.items.find(x => isSub(x) && x.items === cur.arr)?.id || '' : '';
+    const g = group(view), cur = find(g, it.id), subs = flatSubs(g).map(o => o.s);
+    const curKey = cur ? ((ownerOf(g, cur.arr) || {}).id || '') : '';
     let where = null;
     if(subs.length){
-      where = el('select', { 'aria-label': '放在哪個小群組' }, el('option', { value: '' }, '最上層（不在小群組）'), subs.map(x => el('option', { value: x.id }, x.name)));
+      where = el('select', { 'aria-label': '放在哪個小群組' }, el('option', { value: '' }, '最上層（不在小群組）'), subOptions(g));
       where.value = curKey;
       row.append(el('div', { class: 'mvline' }, '放在', where));
     }
@@ -1403,7 +1469,8 @@ function itemRow(it, n, hideBox){
           if(a === null) toast('金額請輸入數字（金額未更改）'); else if(a !== '') c2.it.amt = a; else delete c2.it.amt;
         }
         if(where && where.value !== curKey){
-          const dest = where.value ? g2.items.find(x => x.id === where.value)?.items : g2.items;
+          const wr = where.value ? findIn(g2.items, where.value) : null;
+          const dest = where.value ? (wr && isSub(wr.it) ? wr.it.items : null) : g2.items;
           if(dest && dest !== c2.arr){ c2.arr.splice(c2.arr.indexOf(c2.it), 1); dest.push(c2.it); if(where.value) addTarget = where.value; }
         }
       }
@@ -1438,19 +1505,19 @@ function itemRow(it, n, hideBox){
   return row;
 }
 
-function subBlock(s, n){
-  const gv = group(view), hide = boxesHidden(gv, s), sst = stateOf(s), done = sst === 1 && !hide;
-  const block = el('div', { class: 'sub', 'data-unit': s.id, style: `--h:${subHue(s)}` });
+function subBlock(s, n, depth = 0, parentHide = false, num = ''){
+  const gv = group(view), hide = parentHide || boxesHidden(gv, s), sst = stateOf(s), done = sst === 1 && !hide;
+  const block = el('div', { class: 'sub' + (depth ? ' sub2' : ''), 'data-unit': s.id, style: `--h:${subHue(s)}` });
   let head;
   if(editing && editing.id === s.id){
     const name = el('input', { type: 'text', class: 'e-name', value: s.name, 'aria-label': '小群組名稱' });
     head = el('div', { class: 'row subhead editing' }, el('span', { class: 'num code' }, n), name,
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => head._save() }, '✓'));
-    head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
+    head._save = bindEdit(head, [name], () => { const v = name.value.trim(), c2 = find(group(view), s.id); const g2 = group(view); if(v && c2){ if(norm(v) !== norm(c2.it.name) && subNameTaken(g2, v, c2.it.id, c2.arr)) toast(`已有同名小群組「${v}」，名稱未更改`); else c2.it.name = v; } editing = null; commit(); }, stopEdit);
   } else {
-    const live = s.items.filter(i => !i.skip), dn = live.filter(i => i.done).length;
+    const live = leavesOf(s.items).filter(i => !i.skip), dn = live.filter(i => i.done).length;
     const hb = checkBox(hide ? 0 : (moveMode ? (sst === 2 ? 2 : 0) : sst));
-    if(moveMode && !hide){ const kids = s.items.filter(c => stateOf(c) === 0); if(sst === 1) hb.classList.add('locked'); else if(sst === 0 && kids.length && kids.every(c => moveSel.has(c.id))) hb.classList.add('sel'); }
+    if(moveMode && !hide){ const kids = leavesOf(s.items).filter(c => !isSub(c) && stateOf(c) === 0); if(sst === 1) hb.classList.add('locked'); else if(sst === 0 && kids.length && kids.every(c => moveSel.has(c.id))) hb.classList.add('sel'); }
     if(hide) hb.style.visibility = 'hidden';
     const hact = () => { if(hide) return; if(moveMode){ if(sst === 0) toggleSelSub(s); } else toggleMark(s.id); };
     const isMoney = kindOf(gv) === 'money';
@@ -1477,7 +1544,8 @@ function subBlock(s, n){
   block.append(head);
   if(!s.collapsed){
     const ch = el('div', { class: 'children', 'data-container': s.id });
-    s.items.forEach((it, i) => ch.append(itemRow(it, i + 1, hide)));
+    let ni = 0, nk = 0;
+    s.items.forEach(it => ch.append(isSub(it) ? subBlock(it, `${num}-${++nk}`, depth + 1, hide, '') : itemRow(it, ++ni, hide)));   // 小小群組編號：20-1、20-2…
     block.append(ch);
   }
   return block;
@@ -1530,7 +1598,7 @@ function startDrag(x, y){
   const isSubUnit = p.unit.classList.contains('sub');
   if(!isSubUnit) document.body.classList.add('drag-item');
   if(navigator.vibrate) navigator.vibrate(12);
-  drag = { hold: p.touch && p.onText, field: p.field, moved: !p.touch, sx: x, sy: y, unit: p.unit, isSubUnit, root: document.querySelector('.list[data-container="root"]'), into: null,
+  drag = { hold: p.touch && p.onText, field: p.field, moved: !p.touch, sx: x, sy: y, unit: p.unit, isSubUnit, home: p.unit.parentElement, root: document.querySelector('.list[data-container="root"]'), into: null,
     ghost, off: y - rect.top, x, y, pid: p.id,
     scroller: setInterval(() => {
       if(!drag) return;
@@ -1547,7 +1615,7 @@ function moveDrag(x, y){
   if(!drag.moved && Math.hypot(x - drag.sx, y - drag.sy) > 8) drag.moved = true;
   drag.ghost.style.top = (y - drag.off) + 'px';
   document.querySelectorAll('.sub.hot').forEach(n => n.classList.remove('hot'));
-  let list = drag.root, before;       // before: undefined=依位置判斷, 節點=放在它前面, 'first'=放在最前面
+  let list = drag.isSubUnit ? drag.home : drag.root, before;     // 小群組／小小群組只能在自己原本那一層排序       // before: undefined=依位置判斷, 節點=放在它前面, 'first'=放在最前面
   let into = null;
   if(!drag.isSubUnit){
     const hit = document.elementFromPoint(x, y);
@@ -1588,10 +1656,10 @@ function endDrag(){
     pendingRender = false; render(); return;
   }
   const g = group(view);
-  const total = () => g.items.reduce((n, it) => n + 1 + (isSub(it) ? it.items.length : 0), 0);
+  const total = () => allNodes(g.items).length;
   const before = total();
   const map = new Map();
-  g.items.forEach(it => { map.set(it.id, it); if(isSub(it)) it.items.forEach(c => map.set(c.id, c)); });
+  allNodes(g.items).forEach(it => map.set(it.id, it));
   if(d.into){
     const item = map.get(d.unit.dataset.unit), sub = map.get(d.into), r = item && find(g, item.id);
     if(r && sub && isSub(sub) && !isSub(item)){ r.arr.splice(r.arr.indexOf(item), 1); sub.items.push(item); }
@@ -1599,11 +1667,12 @@ function endDrag(){
     const ids = l => [...l.children].filter(c => c.dataset.unit).map(c => c.dataset.unit);
     const newRoot = ids(d.root).map(i => map.get(i)).filter(Boolean);
     const newKids = new Map();
-    g.items.filter(isSub).forEach(sb => {
+    allNodes(g.items).filter(isSub).forEach(sb => {
       const cl = document.querySelector(`.children[data-container="${sb.id}"]`);
-      if(cl) newKids.set(sb.id, ids(cl).map(i => map.get(i)).filter(x => x && !isSub(x)));
+      if(cl) newKids.set(sb.id, ids(cl).map(i => map.get(i)).filter(Boolean));
     });
-    const after = newRoot.reduce((n, it) => n + 1 + (isSub(it) ? (newKids.get(it.id) || it.items).length : 0), 0);
+    const cnt = it => 1 + (isSub(it) ? (newKids.get(it.id) || it.items).reduce((n, c) => n + cnt(c), 0) : 0);
+    const after = newRoot.reduce((n, it) => n + cnt(it), 0);
     if(after === before){
       newKids.forEach((arr, id) => { const sb = map.get(id); sb.items.splice(0, sb.items.length, ...arr); });
       g.items.splice(0, g.items.length, ...newRoot);
