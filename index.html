@@ -104,7 +104,7 @@ body.drag-item .children{min-height:40px}
 .mvline select{flex:1;min-width:0;height:38px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 8px}
 .addform{display:flex;gap:8px;align-items:center}
 .addform input{height:40px}
-.a-qty,.e-qty{flex:none!important;width:62px;text-align:center;min-width:0}
+.a-qty,.e-qty,.e-need{flex:none!important;width:62px;text-align:center;min-width:0}
 .e-qty{width:62px}
 .addform .btn{height:40px;padding:0 12px;font-size:14px}
 .row.editing{flex-wrap:wrap;cursor:default;gap:8px;padding:6px 8px 6px 12px;user-select:text;-webkit-user-select:text}
@@ -231,6 +231,17 @@ dialog input[type=checkbox]{width:18px;height:18px;flex:none}
 .pbtn:hover,.pbtn:focus-visible{opacity:1}
 .pbtn.on{color:var(--ink);font-weight:700;opacity:1}
 
+/* ===== 數量：「要帶 / 已有」，左邊紫色 ===== */
+:root{--needpurple:#8e3fc4}
+@media (prefers-color-scheme: dark){:root{--needpurple:#cfa2ff}}
+.qty{white-space:nowrap;min-width:3.6em}
+.qty .q-need{color:var(--needpurple);font-weight:500}
+input.e-need{color:var(--needpurple);font-weight:500}
+.pv-q{white-space:nowrap}
+.pv-need{color:#8e3fc4;font-weight:500}
+.addbar .btn.mode{font-size:18px}
+.addbar .btn.plus{font-size:20px}
+
 /* ===== 活動標題（群組頁，工具列下方） ===== */
 .trip{margin:8px -16px 0;padding:6px 16px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:700;min-height:42px;display:flex;align-items:center;overflow-wrap:anywhere;cursor:text;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .trip.ph{color:var(--muted);opacity:.6;font-weight:400}
@@ -293,7 +304,7 @@ const FIREBASE_CONFIG = {
 /* =========================================================== */
 
 const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
-const CLOUD_NAME = 'keloftva';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
+const CLOUD_NAME = 'YOUR_CLOUD_NAME';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
 const UPLOAD_PRESET = 'equipment';                      // 你建立的 Unsigned upload preset 名稱（資料夾 camping 已設在 preset 裡）
 const PHOTO_MAX_SIDE = 2400;                            // 照片長邊上限（px），上傳前先縮小以加快速度；設 0 = 不縮小
 const INDEX_ID = '_group_index';   // 群組清單（只有名稱，不含內容）放在這份雲端文件
@@ -731,7 +742,7 @@ function toggleSelSub(s){            // 批次：選取（或取消選取）這�
 }
 function moveSelected(destId){
   const g = group(view); if(!g) return;
-  if(!moveSel.size){ toast('請先勾選要搬移的項目（粉紅色勾），再按 ＋'); return; }
+  if(!moveSel.size){ toast('請先勾選要搬移的項目（粉紅色勾），再按 🟢'); return; }
   const destSub = destId ? g.items.find(x => x.id === destId) : null;
   const dest = destId ? destSub?.items : g.items;
   if(!dest) return;
@@ -814,7 +825,7 @@ function render(){
   if(view && group(view)) renderGroup(app, group(view)); else { view = null; renderHome(app); }
   window.scrollTo(0, y);
   if(editing){
-    const inp = document.querySelector(editing.field === 'qty' ? '.e-qty' : '.e-name');
+    const inp = document.querySelector(editing.field === 'qty' ? '.e-qty' : editing.field === 'need' ? '.e-need' : '.e-name');
     if(inp){ inp.focus(); try{ inp.select(); }catch(e){} }
   } else if(refocus){
     const n = document.querySelector('.addbar .a-name'); if(n) n.focus();
@@ -995,12 +1006,12 @@ function buildAddBar(g){
   const sel = subs.length ? el('select', { class: 'a-sel', 'aria-label': '放入哪個小群組' },
     el('option', { value: '' }, '---'), subs.map(s => el('option', { value: s.id }, s.name))) : null;
   if(sel) sel.value = addTarget;
-  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組', 'aria-label': '建立小群組' }, 'Ｇ');
+  const modeBtn = el('button', { class: 'btn mode', type: 'button', 'aria-pressed': 'false', title: '建立小群組', 'aria-label': '建立小群組' }, '🗂️');
   const name = el('input', { type: 'text', class: 'a-name', enterkeyhint: 'done' });
   const qty = hasQ ? el('input', { type: 'text', class: 'a-qty', inputmode: 'numeric', placeholder: '數量', 'aria-label': '數量' }) : null;
   const date = hasD ? el('input', { type: 'text', class: 'a-date', inputmode: 'numeric', maxlength: '10', placeholder: '日期', title: '西元年月日，例如 20261021', 'aria-label': '日期（西元年月日，例如 20261021）' }) : null;
   const amt = hasA ? el('input', { type: 'text', class: 'a-amt', inputmode: 'decimal', placeholder: '金額', 'aria-label': '金額' }) : null;
-  const ok = el('button', { class: 'btn plus', type: 'button', 'aria-label': '新增項目' }, '＋');
+  const ok = el('button', { class: 'btn plus', type: 'button', 'aria-label': '新增項目' }, '🟢');
   const subName = () => subs.find(s => s.id === addTarget)?.name;
   function paint(){
     modeBtn.classList.toggle('on', subMode); modeBtn.setAttribute('aria-pressed', String(subMode));
@@ -1044,12 +1055,12 @@ function buildAddBar(g){
   if(sel) sel.addEventListener('change', fitSel);
   paint(); fitSel();
   /* 由左到右：選單｜Ｇ｜Ｍ｜名稱｜日期｜金額｜數量｜＋（窄螢幕自動折成兩列，順序不變） */
-  const moveBtn = sel ? el('button', { class: 'btn mode' + (moveMode ? ' move-on' : ''), type: 'button', 'aria-pressed': String(moveMode), title: '搬移模式：鎖住原有的勾，另外勾選要搬的項目', 'aria-label': '搬移模式', onclick: () => setMoveMode(!moveMode) }, 'Ｍ') : null;
+  const moveBtn = sel ? el('button', { class: 'btn mode' + (moveMode ? ' move-on' : ''), type: 'button', 'aria-pressed': String(moveMode), title: '搬移模式：鎖住原有的勾，另外勾選要搬的項目', 'aria-label': '搬移模式', onclick: () => setMoveMode(!moveMode) }, '🔃') : null;
   const brk = () => el('span', { class: 'brk' });
   if(moveMode && sel){                                   // 搬移模式：只留「選單、Ｍ、已選幾項、＋」，避免和新增項目混淆
     modeBtn.disabled = true;
     ok.setAttribute('aria-label', '搬移選取的項目');
-    return el('div', { class: 'addbar' }, el('div', { class: 'in' }, [sel, modeBtn, moveBtn, brk(), el('span', { class: 'mvhint' }, `已選 ${moveSel.size} 項，選好目的地後按 ＋ 搬移`), ok]));
+    return el('div', { class: 'addbar' }, el('div', { class: 'in' }, [sel, modeBtn, moveBtn, brk(), el('span', { class: 'mvhint' }, `已選 ${moveSel.size} 項，選好目的地後按 🟢 搬移`), ok]));
   }
   const kids = [];
   if(sel) kids.push(sel);
@@ -1261,7 +1272,7 @@ function buildSheet(g, sheet, mode){
     if(kd !== 'plain' && it.date) metas.push(el('span', { class: 'pv-meta' }, it.date));
     if(kd === 'money' && it.amt !== undefined && it.amt !== '') metas.push(el('span', { class: 'pv-meta' }, fmtAmt(it.amt)));
     return el('div', { class: 'pv-row' }, mkBox(it), el('span', { class: 'pv-t' }, it.text, metas),
-      kd !== 'todo' && it.qty ? el('span', { class: 'pv-q' }, '×' + it.qty) : '');
+      kd !== 'todo' && it.qty ? el('span', { class: 'pv-q' }, el('span', { class: 'pv-need' }, mode === 0 ? '' : String((it.need !== undefined && it.need !== '' && it.need != null) ? it.need : it.qty)), ' / ' + it.qty) : '');
   };
   const head = el('div', { class: 'pv-head' }, el('h1', {}, (g.opts && g.opts.tripTitle) || g.name), el('hr'));
   const cols = el('div', { class: 'pv-cols' });
@@ -1334,12 +1345,24 @@ function lockPanel(g){
     el('p', { class: 'hint' }, '如果這個群組在另一台裝置上還沒設定同步代碼，內容只存在那台裝置，請先到那台裝置的「⋯」裡設定代碼。'));
 }
 
+/* 數量顯示「要帶 / 已有」：左邊（紫色）沒另外設定時＝右邊，所以剛建立的 16 會顯示 16 / 16 */
+function qtyNodes(it, kd){
+  if(kd === 'todo' || !it.qty) return '';
+  const nd = (it.need === undefined || it.need === '' || it.need == null) ? it.qty : it.need;
+  return [el('span', { class: 'q-need' }, String(nd)), ' / ', el('span', { class: 'q-have' }, String(it.qty))];
+}
 function itemRow(it, n, hideBox){
   if(editing && editing.id === it.id){
     const name = el('input', { type: 'text', class: 'e-name', value: it.text, 'aria-label': '項目名稱' });
     const kind = kindOf(group(view)), eD = kind !== 'plain', eA = kind === 'money', eQ = kind !== 'todo';
-    const qty = eQ ? el('input', { type: 'text', class: 'e-qty', inputmode: 'numeric', value: it.qty === '' || it.qty == null ? '' : String(it.qty), placeholder: '數量', 'aria-label': '數量' }) : null;
-    const row = el('div', { class: 'row editing', 'data-unit': it.id }, el('span', { class: 'num' }, n + '.'), name, qty || '',
+    const qty = eQ ? el('input', { type: 'text', class: 'e-qty', inputmode: 'numeric', value: it.qty === '' || it.qty == null ? '' : String(it.qty), placeholder: '已有', 'aria-label': '已有的數量' }) : null;
+    const needInit = (it.qty === '' || it.qty == null) ? '' : String((it.need === undefined || it.need === '' || it.need == null) ? it.qty : it.need);
+    const need = eQ ? el('input', { type: 'text', class: 'e-need', inputmode: 'numeric', value: needInit, placeholder: '要帶', 'aria-label': '準備帶去的數量' }) : null;
+    if(need && qty) need.addEventListener('input', () => {        // 要帶的數量不能大於已有的數量
+      const q = cleanQty(qty.value), nd = cleanQty(need.value);
+      if(q !== '' && nd !== '' && nd > q){ need.value = String(q); toast('要帶的數量不能大於已有的數量'); }
+    });
+    const row = el('div', { class: 'row editing', 'data-unit': it.id }, el('span', { class: 'num' }, n + '.'), name, need || '', eQ ? el('span', { style: 'color:var(--muted)' }, '/') : '', qty || '',
       el('button', { class: 'ok', type: 'button', 'aria-label': '完成', onclick: () => row._save() }, '✓'));
     const g = group(view), cur = find(g, it.id), subs = g.items.filter(isSub);
     const curKey = cur && cur.arr !== g.items ? g.items.find(x => isSub(x) && x.items === cur.arr)?.id || '' : '';
@@ -1355,12 +1378,22 @@ function itemRow(it, n, hideBox){
       if(eA) aIn = el('input', { type: 'text', class: 'e-amt', inputmode: 'decimal', value: (it.amt === undefined || it.amt === '') ? '' : String(it.amt), placeholder: '金額', 'aria-label': '金額' });
       row.append(el('div', { class: 'mvline' }, dIn, aIn || ''));
     }
-    row._save = bindEdit(row, [name, ...(qty ? [qty] : []), ...(dIn ? [dIn] : []), ...(aIn ? [aIn] : [])], () => {
+    row._save = bindEdit(row, [name, ...(need ? [need] : []), ...(qty ? [qty] : []), ...(dIn ? [dIn] : []), ...(aIn ? [aIn] : [])], () => {
       const g2 = group(view), c2 = g2 && find(g2, it.id);          // 重新查一次，避免剛好同步到別台裝置的更新
       if(c2){
         const v = name.value.trim();
         if(v && norm(v) !== norm(c2.it.text) && itemNameTaken(g2, v, c2.it.id)) toast(`已有同名項目「${v}」，名稱未更改`); else if(v) c2.it.text = v;
-        if(qty) c2.it.qty = cleanQty(qty.value);
+        if(qty){
+          const q = cleanQty(qty.value);
+          c2.it.qty = q;
+          if(q === '') delete c2.it.need;
+          else if(need && need.value !== needInit){          // 左邊（要帶）有改才記錄；沒改就一直等於右邊（已有）
+            const nd = cleanQty(need.value);
+            if(nd !== '' && nd > q) toast('要帶的數量不能大於已有的數量，已改成和已有數量相同');
+            if(nd === '' || nd >= q) delete c2.it.need; else c2.it.need = nd;
+          }
+          if(c2.it.need != null && c2.it.need !== '' && c2.it.need > q) delete c2.it.need;     // 已有數量改小時，要帶的也不能超過
+        }
         if(dIn){
           const d = parseDate(dIn.value);
           if(d === null) toast('日期請輸入 8 碼，例如 20261021（日期未更改）'); else if(d) c2.it.date = d; else delete c2.it.date;
@@ -1388,14 +1421,14 @@ function itemRow(it, n, hideBox){
     cb,
     el('span', { class: 'num' }, n + '.'),
     el('span', { class: 'txt' }, it.text, metas, picBtn(it)),
-    el('span', { class: 'qty' }, kd !== 'todo' && it.qty ? '×' + it.qty : ''),
+    el('span', { class: 'qty' }, qtyNodes(it, kd)),
     el('button', { class: 'mini del', 'aria-label': '刪除 ' + it.text, onclick: e => { e.stopPropagation(); if(blocked()) return; askDelete(`刪除「${it.text}」？`, '刪除後無法復原。', () => removeById(it.id)); } }, '−'));
   const act = () => { if(hideBox) return; if(moveMode){ if(stateOf(it) === 0) toggleSelItem(it.id); } else toggleItem(it.id); };   // 搬移模式：只能選「沒打勾」的
   row.addEventListener('click', e => {
     if(blocked() || e.target.closest('.del,.pic')) return;
     const t = e.target.closest('.txt,.qty');
     if(t){
-      const field = t.classList.contains('qty') ? 'qty' : 'text';
+      const field = e.target.closest('.q-need') ? 'need' : t.classList.contains('qty') ? 'qty' : 'text';
       tapText(it.id, act, () => { editing = { id: it.id, field }; render(); });
       return;
     }
@@ -1469,7 +1502,7 @@ document.addEventListener('pointerdown', e => {
   const list = unit.parentElement;
   if(!list || !list.dataset.container) return;
   press = { unit, x: e.clientX, y: e.clientY, id: e.pointerId, touch: e.pointerType !== 'mouse' && !grip, timer: null,
-    field: e.target.closest('.qty') ? 'qty' : 'text', onText: !!e.target.closest('.txt,.qty') };
+    field: e.target.closest('.q-need') ? 'need' : e.target.closest('.qty') ? 'qty' : 'text', onText: !!e.target.closest('.txt,.qty') };
   if(press.touch) press.timer = setTimeout(() => { if(press) startDrag(press.x, press.y); }, HOLD_MS);
 });
 document.addEventListener('pointermove', e => {
