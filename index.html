@@ -260,7 +260,7 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .toolbar .sum{font-size:12px}
 
 /* ===== ⋯ 功能選單／MEMO ===== */
-.tm-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:6px 0 4px}
+.tm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0 4px}
 .tm-btn{display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:10px 0 8px}
 .tm-btn[disabled]{opacity:.4}
 .tm-ico{font-size:26px;line-height:1}
@@ -1037,7 +1037,7 @@ function renderGroup(app, g){
     isPack(g) ? '' : el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openNotes(g), title: 'MEMO', 'aria-label': 'MEMO' }, '📝') : '',
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的勾選', 'aria-label': '復原上一個動作' }, '↶'),
-    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：匯入、重整、生成網頁、展開／收合、儲存', 'aria-label': '更多功能' }, '⋯') : '',
+    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合', 'aria-label': '更多功能' }, '⋯') : '',
     el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
   if(isPack(g)) top.append(tripBar(g));
   app.append(top);
@@ -1054,18 +1054,19 @@ function renderGroup(app, g){
   document.body.append(buildAddBar(g));
 }
 
-/* ---------- 露營／旅遊：⋯ 功能選單（匯入、重整、生成網頁、儲存）、MEMO、儲存 json ---------- */
+/* ---------- 露營／旅遊：⋯ 功能選單（儲存、匯入 json、清空勾選、重整、生成網頁、展開／收合）、MEMO ---------- */
 function openToolMenu(g){
   openDialog((f, close) => {
     const item = (ico, label, fn, off) => el('button', { class: 'tm-btn', type: 'button', disabled: off ? 'disabled' : null, 'aria-label': label, title: label,
       onclick: () => { close(); setTimeout(fn, 30); } }, el('span', { class: 'tm-ico' }, ico), el('span', { class: 'tm-lb' }, label));
     f.append(el('h2', {}, '更多功能'),
       el('div', { class: 'tm-grid' },
-        item('📥', '匯入', pickImport),
+        item('💾', '儲存', () => saveJson(g)),
+        item('📥', '匯入', () => pickJsonImport(g)),
+        item('♻️', '清空勾選', () => clearChecks(g)),
         item('🧹', '重整', tidyGroup, moveMode),
         item('📄', '生成網頁', () => openPrintView(g)),
-        item(subsAllOpen(g) ? '📁' : '📂', subsAllOpen(g) ? '全部收合' : '全部展開', () => toggleAllFold(g)),
-        item('💾', '儲存', () => saveJson(g))),
+        item(subsAllOpen(g) ? '📁' : '📂', subsAllOpen(g) ? '全部收合' : '全部展開', () => toggleAllFold(g))),
       el('div', { class: 'acts' }, el('button', { class: 'btn ghost', type: 'button', onclick: close }, '關閉')));
   });
 }
@@ -1077,6 +1078,52 @@ function toggleAllFold(g){
   const open = subsAllOpen(gg);                 // 全都展開 → 收合；否則 → 全部展開
   subs.forEach(x => { x.collapsed = open; });
   commit(gg); toast(open ? '已全部收合' : '已全部展開');
+}
+/* 清空：只把所有打勾、灰底框恢復成未打勾，並清掉 MEMO 文字；小群組、清單項目、數量、照片等都完整保留 */
+function clearChecks(g){
+  const nChk = allNodes(g.items).filter(x => stateOf(x) !== 0).length, hasMemo = !!(g.opts && g.opts.notes);
+  if(!nChk && !hasMemo){ toast('目前沒有打勾、灰底的框，也沒有 MEMO'); return; }
+  askDelete('清空勾選與 MEMO？',
+    `會把 ${nChk} 個打勾／灰底的框恢復成未打勾，並清空 MEMO 文字。你建立的小群組與清單項目完全不會被刪除。建議先按 💾 儲存一份備份。`,
+    () => {
+      const gg = group(g.id); if(!gg) return;
+      allNodes(gg.items).forEach(x => setState(x, 0));
+      const o = { ...(gg.opts || {}) }; delete o.notes; gg.opts = o;
+      commit(gg); toast('已清空勾選與 MEMO');
+    }, '清空');
+}
+/* 匯入 json：用檔案內容完整取代這個群組的小群組、清單（含打勾／灰底狀態）與 MEMO、活動標題 */
+function pickJsonImport(g){
+  const inp = el('input', { type: 'file', accept: '.json,application/json', class: 'hide' });
+  const done = () => inp.remove();
+  inp.addEventListener('cancel', done);
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; done();
+    if(!f) return;
+    let d;
+    try{ d = JSON.parse((await f.text()).replace(/^﻿/, '')); }catch(e){ toast('這不是有效的 json 檔'); return; }
+    if(!d || !Array.isArray(d.items)){ toast('檔案格式不符，不是這個程式儲存的 json'); return; }
+    const fix = arr => arr.every(x => x && typeof x === 'object' && !Array.isArray(x) && (isSub(x) ? (fix(x.items) && x.name != null) : x.text != null));
+    if(!fix(d.items)){ toast('檔案內容有誤，無法匯入'); return; }
+    const seen = new Set();
+    const ids = arr => arr.forEach(x => { if(!x.id || seen.has(x.id)) x.id = uid(); seen.add(x.id); if(isSub(x)) ids(x.items); });
+    ids(d.items);
+    const lv = leavesOf(d.items).filter(x => !isSub(x)).length, sb = allNodes(d.items).filter(isSub).length;
+    const memo = !!(d.opts && d.opts.notes) || !!d.notes;
+    askDelete('匯入並還原？',
+      `檔案「${f.name}」內有 ${sb} 個小群組、${lv} 個項目${memo ? '，以及 MEMO' : ''}。匯入後，目前這個群組的小群組、清單、勾選狀態與 MEMO 會被檔案內容完全取代（群組名稱與同步代碼不變）。`,
+      () => {
+        const gg = group(g.id); if(!gg) return;
+        const o = { ...(d.opts || {}) };
+        if(d.notes && !o.notes) o.notes = d.notes;
+        if(d.tripTitle && !o.tripTitle) o.tripTitle = d.tripTitle;
+        gg.items = d.items; gg.opts = o;
+        for(let i = undoStack.length - 1; i >= 0; i--) if(undoStack[i].gid === gg.id) undoStack.splice(i, 1);
+        moveMode = false; moveSel = new Set(); addTarget = '';
+        commit(gg); toast('已匯入並還原');
+      }, '匯入並取代');
+  });
+  document.body.append(inp); inp.click();
 }
 function saveJson(g){
   const o = { ...(g.opts || {}) };
