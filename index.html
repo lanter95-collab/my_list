@@ -356,6 +356,10 @@ let view = (ui.view && state.groups.some(g => g.id === ui.view)) ? ui.view : nul
 let editing = null;              // { id, field:'text'|'qty' }，id='__title' 代表群組標題
 let refocus = false, undoSnap = null, pendingRender = false;
 let addTarget = (view && ui.t && ui.t[view]) || '', uploadingId = null;
+let onlyTodo = false;     // 「只看未準備」：只顯示沒打勾的項目（所屬小群組名稱會保留）；只是畫面上的篩選，不會改動資料
+const todoLeaf = x => !isSub(x) && stateOf(x) === 0;
+const hasTodo = x => leavesOf(x.items).some(todoLeaf);
+const visTodo = x => isSub(x) ? (stateOf(x) === 0 || hasTodo(x)) : stateOf(x) === 0;
 let moveMode = false, moveSel = new Set();     // 搬移模式：鎖住原有的勾，只勾選要搬的項目
 let homeView = localStorage.getItem('mylists-homeview') || 'list';
 let db = null;
@@ -889,7 +893,7 @@ function render(){
   if(ui.view !== view){ ui.view = view; saveUI(); }
   if(view && (ui.t || {})[view] !== addTarget){ ui.t = ui.t || {}; ui.t[view] = addTarget; saveUI(); }
 }
-function goto(id){ hideUndoToast(); moveMode = false; moveSel = new Set(); view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
+function goto(id){ hideUndoToast(); onlyTodo = false; moveMode = false; moveSel = new Set(); view = id; editing = null; addTarget = (id && ui.t && ui.t[id]) || ''; render(); window.scrollTo(0, 0); }
 
 function hue(id){ let h = 0; for(const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function toggleHomeView(){ homeView = homeView === 'list' ? 'cards' : 'list'; localStorage.setItem('mylists-homeview', homeView); render(); }
@@ -1037,8 +1041,8 @@ function renderGroup(app, g){
     isPack(g) ? '' : el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openNotes(g), title: 'MEMO', 'aria-label': 'MEMO' }, '📝') : '',
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的勾選', 'aria-label': '復原上一個動作' }, '↶'),
-    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合', 'aria-label': '更多功能' }, '⋯') : '',
-    el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
+    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合、只看未準備', 'aria-label': '更多功能' }, '⋯') : '',
+    el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${onlyTodo ? '🔎 只看未準備　' : ''}${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
   if(isPack(g)) top.append(tripBar(g));
   app.append(top);
 
@@ -1047,8 +1051,12 @@ function renderGroup(app, g){
   } else {
     const list = el('div', { class: 'list', 'data-container': 'root' });
     let ni = 0, ns = 0;
-    g.items.forEach(it => list.append(isSub(it) ? subBlock(it, subLabel(g, ns), 0, false, subNum(ns++)) : itemRow(it, ++ni)));
-    app.append(list);
+    g.items.forEach(it => {
+      if(isSub(it)){ const lb = subLabel(g, ns), nm = subNum(ns++); if(!onlyTodo || visTodo(it)) list.append(subBlock(it, lb, 0, false, nm)); }
+      else { ni++; if(!onlyTodo || visTodo(it)) list.append(itemRow(it, ni)); }      // 編號維持原本的，不因隱藏而變動
+    });
+    if(onlyTodo && !list.children.length) app.append(el('div', { class: 'empty' }, '🎉 全部都準備好了，沒有未打勾的項目'));
+    else app.append(list);
   }
   if(isPack(g) && g.opts && g.opts.notes) app.append(notesBlock(g));
   document.body.append(buildAddBar(g));
@@ -1066,7 +1074,8 @@ function openToolMenu(g){
         item('♻️', '清空勾選', () => clearChecks(g)),
         item('🧹', '重整', tidyGroup, moveMode),
         item('📄', '生成網頁', () => openPrintView(g)),
-        item(subsAllOpen(g) ? '📁' : '📂', subsAllOpen(g) ? '全部收合' : '全部展開', () => toggleAllFold(g))),
+        item(subsAllOpen(g) ? '📁' : '📂', subsAllOpen(g) ? '全部收合' : '全部展開', () => toggleAllFold(g)),
+        item(onlyTodo ? '👁️' : '🔎', onlyTodo ? '顯示全部' : '只看未準備', () => { onlyTodo = !onlyTodo; render(); window.scrollTo(0, 0); toast(onlyTodo ? '只顯示沒打勾的項目（再按一次恢復）' : '已恢復顯示全部'); })),
       el('div', { class: 'acts' }, el('button', { class: 'btn ghost', type: 'button', onclick: close }, '關閉')));
   });
 }
@@ -1307,14 +1316,15 @@ function pinBtns(s, g){
 /* ---------- 重整：有打勾的往上靠齊 → 沒打勾的 → 灰底（不帶）的在最下面；小群組、小小群組、裡面的項目都一樣（同狀態維持原本順序） ---------- */
 function orderSnap(g){
   const m = { root: g.items.map(x => x.id) };
-  allNodes(g.items).forEach(x => { if(isSub(x)) m[x.id] = x.items.map(c => c.id); });
+  m.__c = {};
+  allNodes(g.items).forEach(x => { if(isSub(x)){ m[x.id] = x.items.map(c => c.id); m.__c[x.id] = !!x.collapsed; } });
   return m;
 }
 function restoreOrder(g, m){
   const map = new Map(allNodes(g.items).map(x => [x.id, x]));
   const re = (arr, ids) => { if(!ids) return; const ord = ids.map(i => map.get(i)).filter(Boolean); if(ord.length === arr.length) arr.splice(0, arr.length, ...ord); };
   re(g.items, m.root);
-  allNodes(g.items).forEach(x => { if(isSub(x)) re(x.items, m[x.id]); });
+  allNodes(g.items).forEach(x => { if(isSub(x)){ re(x.items, m[x.id]); if(m.__c && x.id in m.__c) x.collapsed = m.__c[x.id]; } });
 }
 function tidyGroup(){
   const g = group(view); if(!g || moveMode) return;
@@ -1328,7 +1338,10 @@ function tidyGroup(){
     subs.forEach(x => sortArr(x.items));
   };
   sortArr(g.items);
-  commit(); toast('已重整（可按 ↶ 復原）');
+  /* 有未打勾項目的小群組展開；全部都打勾或灰底的小群組收合（自己收起來再重整，有未勾項目的又會被展開） */
+  const fold = arr => arr.forEach(x => { if(isSub(x)){ fold(x.items); x.collapsed = !(hasTodo(x) || (!x.items.length && stateOf(x) === 0)); } });
+  fold(g.items);
+  commit(); toast('已重整：有未勾項目的小群組已展開（可按 ↶ 復原）');
 }
 
 /* ---------- 項目照片（imgbb）：每個項目、小群組都可以放不限張數的照片 ---------- */
@@ -1674,10 +1687,13 @@ function subBlock(s, n, depth = 0, parentHide = false, num = ''){
     });
   }
   block.append(head);
-  if(!s.collapsed){
+  if(!s.collapsed || onlyTodo){
     const ch = el('div', { class: 'children', 'data-container': s.id });
     let ni = 0, nk = 0;
-    s.items.forEach(it => ch.append(isSub(it) ? subBlock(it, `${num}-${++nk}`, depth + 1, hide, '') : itemRow(it, ++ni, hide)));   // 小小群組編號：20-1、20-2…
+    s.items.forEach(it => {       // 小小群組編號：20-1、20-2…
+      if(isSub(it)){ const lb = `${num}-${++nk}`; if(!onlyTodo || visTodo(it)) ch.append(subBlock(it, lb, depth + 1, hide, '')); }
+      else { ni++; if(!onlyTodo || visTodo(it)) ch.append(itemRow(it, ni, hide)); }
+    });
     block.append(ch);
   }
   return block;
@@ -1692,7 +1708,7 @@ document.addEventListener('selectstart', e => { if(press || drag) e.preventDefau
 document.addEventListener('touchmove', e => { if(drag) e.preventDefault(); }, { passive: false });
 
 document.addEventListener('pointerdown', e => {
-  if(!view || drag || moveMode) return;
+  if(!view || drag || moveMode || onlyTodo) return;
   if(e.pointerType === 'mouse' && e.button !== 0) return;
   if(e.target.closest('.pic,.pbtn')) return;
   const grip = e.target.closest('.grip');
