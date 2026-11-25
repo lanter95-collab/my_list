@@ -282,8 +282,22 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .gt-d .sum{display:block;font-size:12px;color:var(--muted);text-align:right;line-height:1.25}
 .gt-d .sum.mv{color:#e5398a;font-weight:500}
 .cover{grid-area:p;align-self:stretch;min-height:76px;border:2px dashed var(--line);border-radius:12px;background:var(--surface);overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);position:relative;min-width:0}
-.cover.has{border:1px solid var(--line);background:var(--surface2)}
-.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;-webkit-user-drag:none}
+.cover.has{border:0;background:transparent}
+.gthead{position:relative;margin:-16px -16px 0;padding:16px 16px 0;isolation:isolate}
+.gthead.hasbg .triprow{background:transparent}
+.gthead.hasbg .trip{text-shadow:0 0 5px var(--bg),0 0 3px var(--bg),0 0 8px var(--bg)}
+.gthead.hasbg .trip.ph{color:var(--ink);opacity:.55}
+.gthead.hasbg::before{content:"";position:absolute;inset:0;z-index:-1;background-image:var(--cv);background-size:cover;background-position:center;opacity:.42;filter:saturate(.85)}
+.gthead.hasbg::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,transparent 82%,var(--bg))}
+.gthead.hasbg .gt-a h1,.gthead.hasbg .gt-d .sum,.gthead.hasbg .sync{text-shadow:0 0 5px var(--bg),0 0 3px var(--bg),0 0 8px var(--bg)}
+.gthead.hasbg .sync,.gthead.hasbg .gt-d .sum{color:var(--ink)}
+.gthead.hasbg .cv-ph{display:none}
+/* 背景有照片時：按鈕、選單的白底改成半透明，看得到後面的照片（和停用的按鈕一樣有點透視） */
+.gthead.hasbg .icon-btn,.gthead.hasbg .master,.gthead.hasbg .toolbar .btn.ghost,.gthead.hasbg .pagesel{
+  background:rgba(255,255,255,.16);background:color-mix(in srgb,var(--surface) 16%,transparent);
+  border-color:rgba(255,255,255,.6);border-color:color-mix(in srgb,var(--surface) 65%,transparent);
+  text-shadow:0 0 4px var(--bg),0 0 2px var(--bg),0 0 6px var(--bg)}
+.gthead.hasbg .pagesel{color:var(--ink)}
 .cover:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .cv-ph{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2}
 .cv-ph b{font-size:22px;font-weight:400}
@@ -338,8 +352,8 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .pv-q{flex:none;color:#444}
 .pv-meta{font-size:.75em;color:#666;margin-left:4px;white-space:nowrap}
 .pv-none{color:#777;text-align:center;padding:30px 0;font-size:14px}
-.pv-photo{position:relative;height:55mm;margin:0 0 6px;outline:1px dashed #b8c2c9;outline-offset:-1px}
-.pv-photo img{position:absolute;display:block;height:auto;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.pv-photo{position:relative;margin:0 0 6px;outline:1px dashed #b8c2c9;outline-offset:-1px}
+.pv-photo img{position:absolute;top:0;display:block;height:auto;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .pv-photo img.drag{cursor:grabbing}
 .pv-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 12px;background:#fff;border-bottom:1px solid #c9d2d8;font-size:13px;color:#333}
 .pv-tools input[type=range]{flex:1 1 120px;max-width:240px}
@@ -381,7 +395,7 @@ const FIREBASE_CONFIG = {
 /* =========================================================== */
 
 const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
-const CLOUD_NAME = 'kelofva';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
+const CLOUD_NAME = 'keloftva';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
 const UPLOAD_PRESET = 'equipment';                      // 你建立的 Unsigned upload preset 名稱（資料夾 camping 已設在 preset 裡）
 const PHOTO_MAX_SIDE = 2400;                            // 照片長邊上限（px），上傳前先縮小以加快速度；設 0 = 不縮小
 const INDEX_ID = '_group_index';   // 群組清單（只有名稱，不含內容）放在這份雲端文件
@@ -1102,9 +1116,8 @@ function newPage(g){
 let coverBusy = false;
 function coverBox(g){
   const c = (g.opts && g.opts.cover) || null;
-  const box = el('div', { class: 'cover' + (c ? ' has' : ''), role: 'button', tabindex: '0', 'aria-label': c ? '查看照片' : '上傳照片', title: c ? '點一下看原圖' : '點一下上傳照片' });
+  const box = el('div', { class: 'cover' + (c ? ' has' : ''), role: 'button', tabindex: '0', 'aria-label': c ? '查看照片' : '上傳照片', title: c ? '點這裡看原圖（可更換、刪除）' : '點這裡上傳背景照片' });
   if(coverBusy) box.append(el('span', { class: 'cv-ph' }, el('b', {}, '⏳'), el('small', {}, '上傳中')));
-  else if(c) box.append(el('img', { src: c.t || c.u, alt: '', draggable: 'false' }));
   else box.append(el('span', { class: 'cv-ph' }, el('b', {}, '📷'), el('small', {}, '上傳照片')));
   const act = () => { if(blocked() || coverBusy) return; if(c) openCoverViewer(g); else pickCover(g); };
   box.addEventListener('click', act);
@@ -1132,9 +1145,9 @@ async function uploadCover(g, file){
     coverBusy = false;
     if(!gg || ((gg.opts && gg.opts.curId) || '') !== cid){ render(); toast('上傳完成，但你已切換到別頁，照片沒有加入'); return; }
     const o = { ...(gg.opts || {}) };
-    o.cover = { u: j.secure_url, t: j.secure_url.replace('/upload/', '/upload/c_limit,w_800,q_auto,f_auto/') };   // 縮圖由 Cloudinary 即時產生
+    o.cover = { u: j.secure_url, t: j.secure_url.replace('/upload/', '/upload/c_limit,w_1200,q_auto,f_auto/'), ar: (j.width && j.height) ? j.height / j.width : undefined };   // 縮圖由 Cloudinary 即時產生
     gg.opts = o; commit(gg); toast('照片已上傳');
-  }catch(e){ console.error(e); coverBusy = false; render(); toast('照片上傳失敗，請檢查網路與 Cloudinary 設定'); }
+  }catch(e){ console.error(e); coverBusy = false; render(); toast('照片上傳失敗：' + (e && e.message ? e.message : '請檢查網路與 Cloudinary 設定')); }
 }
 function openCoverViewer(g){
   const c = g.opts && g.opts.cover; if(!c) return;
@@ -1216,14 +1229,19 @@ function renderGroup(app, g){
     isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合、只看未準備', 'aria-label': '更多功能' }, '⋯') : ''];
   const sumEl = el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${onlyTodo ? '🔎 只看未準備　' : ''}${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''));
   if(pk){
-    top.append(el('div', { class: 'gtgrid' },
+    const cvb = (g.opts && g.opts.cover) || null;
+    const gh = el('div', { class: 'gthead' + (cvb ? ' hasbg' : '') });                // 照片當成整個標題＋工具列區塊的背景（淡化）
+    if(cvb) gh.style.setProperty('--cv', 'url("' + String(cvb.t || cvb.u).replace(/"/g, '%22') + '")');
+    gh.append(el('div', { class: 'gtgrid' },
       el('header', { class: 'gt-a' }, backBtn, title),
       coverBox(g),
       el('div', { class: 'gt-b' }, groupBadge(g), moreBtn),
       el('div', { class: 'toolbar gt-c' }, tbtns),
-      el('div', { class: 'gt-d' }, sumEl)));
+      el('div', { class: 'gt-d' }, sumEl)),
+      tripRow(g));                                                                       // 活動標題列也包在背景裡
+    top.append(gh);
   } else top.append(el('div', { class: 'toolbar' }, tbtns, sumEl));
-  if(isPack(g)) top.append(tripRow(g));
+  if(isPack(g) && !pk) top.append(tripRow(g));
   app.append(top);
 
   if(!g.items.length){
@@ -1577,7 +1595,7 @@ async function uploadPhotos(id, files){
       const thumb = j.secure_url.replace('/upload/', '/upload/c_fill,w_60,h_60,q_auto,f_auto/');   // 縮圖由 Cloudinary 即時產生
       setImgs(r.it, [...imgsOf(r.it), { u: j.secure_url, t: thumb, d: '' }]);
       ok++; commit(g);                                   // 每傳完一張就存起來，中途失敗也不會掉
-    }catch(e){ console.error(e); toast(`第 ${i + 1} 張上傳失敗，請檢查網路後再試`); break; }
+    }catch(e){ console.error(e); toast(`第 ${i + 1} 張上傳失敗：` + (e && e.message ? e.message : '請檢查網路後再試')); break; }
   }
   uploadingId = null; render();
   if(ok) toast(`已上傳 ${ok} 張照片`);
@@ -1681,37 +1699,38 @@ function buildSheet(g, sheet, mode){
 /* 列印頁的照片：固定高度的版面框（190mm × 55mm），照片可在框內拖曳移動、用滑桿縮放；位置與大小記在 opts.cover，下次開啟還是一樣 */
 function savePhotoLayout(gid, lay){
   const gg = group(gid); if(!gg || !gg.opts || !gg.opts.cover) return;
-  const o = { ...gg.opts }; o.cover = { ...o.cover, ps: lay.ps, px: lay.px, py: lay.py };
+  const o = { ...gg.opts }; o.cover = { ...o.cover, ps: lay.ps, px: lay.px };
   gg.opts = o; commit(gg);
 }
+function refitSheet(sh){ const z = sh.style.zoom; sh.style.zoom = ''; fitSheet(sh); sh.style.zoom = z; }   // 照片高度改變時，重新計算清單的欄數與字級
 function buildPhoto(g, cv){
-  const R = 55 / 190;                                                       // 框的高／寬
-  const lay = { ps: cv.ps || 1, px: cv.px, py: cv.py };
+  const W = 190, MAXH = 80;                                                 // 內容寬度、照片最高（mm）
+  const lay = { ps: cv.ps || 1, px: cv.px };
   const frame = el('div', { class: 'pv-photo' });
   const img = el('img', { src: cv.u, alt: '', draggable: 'false' });
   frame.append(img); frame._lay = lay;
+  const arOf = () => cv.ar || (img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.75);
   const calc = () => {
-    const ar = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.75;
-    const w = Math.min(1, R / ar) * Math.max(0.2, Math.min(1, lay.ps));     // 100% ＝ 剛好放進框內
-    return { w, h: w * ar / R };
+    const ar = arOf(), wmm = Math.min(W, MAXH / ar) * Math.max(0.2, Math.min(1, lay.ps));   // 100% ＝ 寬度或高度其中一邊到頂
+    return { w: wmm / W, h: wmm * ar };
   };
   frame._apply = () => {
     const d = calc();
     lay.px = Math.max(0, Math.min(1 - d.w, lay.px == null ? (1 - d.w) / 2 : lay.px));
-    lay.py = Math.max(0, Math.min(1 - d.h, lay.py == null ? (1 - d.h) / 2 : lay.py));
-    img.style.left = (lay.px * 100) + '%'; img.style.top = (lay.py * 100) + '%'; img.style.width = (d.w * 100) + '%';
+    img.style.left = (lay.px * 100) + '%'; img.style.width = (d.w * 100) + '%';
+    frame.style.height = d.h.toFixed(2) + 'mm';                             // 框的高度＝照片高度，清單就會緊貼在照片下方
   };
   frame._scale = v => {                                                     // 縮放時以照片中心為準
-    const o = calc(), cx = (lay.px == null ? (1 - o.w) / 2 : lay.px) + o.w / 2, cy = (lay.py == null ? (1 - o.h) / 2 : lay.py) + o.h / 2;
-    lay.ps = v; const n = calc(); lay.px = cx - n.w / 2; lay.py = cy - n.h / 2; frame._apply();
+    const o = calc(), cx = (lay.px == null ? (1 - o.w) / 2 : lay.px) + o.w / 2;
+    lay.ps = v; const n = calc(); lay.px = cx - n.w / 2; frame._apply();
   };
-  img.addEventListener('load', frame._apply);
+  img.addEventListener('load', () => { frame._apply(); const sh = frame.closest('.pv-sheet'); if(sh && !cv.ar) refitSheet(sh); });
   img.addEventListener('pointerdown', e => {
     e.preventDefault();
     try{ img.setPointerCapture(e.pointerId); }catch(x){}
-    const r = frame.getBoundingClientRect(), st = { x: e.clientX, y: e.clientY, px: lay.px, py: lay.py };
+    const r = frame.getBoundingClientRect(), st = { x: e.clientX, px: lay.px };
     img.classList.add('drag');
-    const mv = ev => { lay.px = st.px + (ev.clientX - st.x) / r.width; lay.py = st.py + (ev.clientY - st.y) / r.height; frame._apply(); };
+    const mv = ev => { lay.px = st.px + (ev.clientX - st.x) / r.width; frame._apply(); };
     const up = () => {
       img.removeEventListener('pointermove', mv); img.removeEventListener('pointerup', up); img.removeEventListener('pointercancel', up);
       img.classList.remove('drag'); savePhotoLayout(g.id, lay);
@@ -1758,7 +1777,7 @@ function openPrintView(g){
   const tools = el('div', { class: 'pv-tools' });
   const range = el('input', { type: 'range', min: '20', max: '100', step: '1', 'aria-label': '照片大小' });
   const tgl = el('button', { class: 'btn ghost', type: 'button' });
-  tools.append(el('span', {}, '🖼️ 照片大小'), range, tgl, el('span', { class: 'pv-hint' }, '在照片上按住拖曳，可移動位置'));
+  tools.append(el('span', {}, '🖼️ 照片大小'), range, tgl, el('span', { class: 'pv-hint' }, '在照片上左右拖曳可調整位置；下方清單會自動靠齊照片'));
   const paintTools = () => {
     const c = (gcur().opts || {}).cover;
     tools.classList.toggle('hide', !c);
@@ -1766,7 +1785,7 @@ function openPrintView(g){
     range.value = String(Math.round((c.ps || 1) * 100)); range.disabled = c.pshow === false;
     tgl.textContent = c.pshow === false ? '顯示照片' : '隱藏照片';
   };
-  range.addEventListener('input', () => { const fr = sheet.querySelector('.pv-photo'); if(fr) fr._scale(range.value / 100); });
+  range.addEventListener('input', () => { const fr = sheet.querySelector('.pv-photo'); if(fr){ fr._scale(range.value / 100); refitSheet(sheet); } });
   range.addEventListener('change', () => { const fr = sheet.querySelector('.pv-photo'); if(fr) savePhotoLayout(g.id, fr._lay); });
   tgl.addEventListener('click', () => {
     const gg = gcur(); if(!gg.opts || !gg.opts.cover) return;
