@@ -287,7 +287,9 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .gthead.hasbg .triprow{background:transparent}
 .gthead.hasbg .trip{text-shadow:0 0 5px var(--bg),0 0 3px var(--bg),0 0 8px var(--bg)}
 .gthead.hasbg .trip.ph{color:var(--ink);opacity:.55}
-.gthead.hasbg::before{content:"";position:absolute;inset:0;z-index:-1;background-image:var(--cv);background-size:cover;background-position:center;opacity:.42;filter:saturate(.85)}
+.gthead.hasbg::before{content:"";position:absolute;inset:0;z-index:-1;background-image:var(--cv);background-size:cover;background-position:var(--bpx,50%) var(--bpy,50%);opacity:.42;filter:saturate(.85)}
+.gthead.hasbg{touch-action:none}
+.gthead.hasbg .cover,.gthead.hasbg .gtgrid{cursor:grab}
 .gthead.hasbg::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,transparent 82%,var(--bg))}
 .gthead.hasbg .gt-a h1,.gthead.hasbg .gt-d .sum,.gthead.hasbg .sync{text-shadow:0 0 5px var(--bg),0 0 3px var(--bg),0 0 8px var(--bg)}
 .gthead.hasbg .sync,.gthead.hasbg .gt-d .sum{color:var(--ink)}
@@ -1114,9 +1116,48 @@ function newPage(g){
 }
 /* ---------- 照片區（標題旁）：每一頁各自一張，傳到 Cloudinary，顯示縮圖，點一下看原圖，可更換／刪除 ---------- */
 let coverBusy = false;
+const arCache = {};
+function coverAR(cv){                                  // 照片的 高／寬（新上傳的記在 cover.ar；舊的先偷偷載一次量出來）
+  if(cv.ar) return cv.ar;
+  const k = cv.t || cv.u; if(arCache[k]) return arCache[k];
+  const im = new Image(); im.onload = () => { if(im.naturalWidth) arCache[k] = im.naturalHeight / im.naturalWidth; }; im.src = k;
+  return 0;
+}
+/* 在背景照片上按住拖曳，調整照片顯示的範圍（位置記在 cover.bx／by，百分比） */
+function bindCoverPan(gh, g){
+  const okT = ['gthead', 'gtgrid', 'cover', 'gt-a', 'gt-b', 'gt-c', 'gt-d', 'triprow'];
+  gh.addEventListener('pointerdown', e => {
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    if(!okT.some(c => e.target.classList.contains(c))) return;           // 只在空白處；按鈕、標題照常操作
+    const gg0 = group(g.id), cv = gg0 && gg0.opts && gg0.opts.cover; if(!cv) return;
+    const ar = coverAR(cv); if(!ar) return;
+    const r = gh.getBoundingClientRect(), iw = Math.max(r.width, r.height / ar), ih = iw * ar;
+    const Ex = iw - r.width, Ey = ih - r.height;
+    const st = { x: e.clientX, y: e.clientY, bx: cv.bx == null ? 50 : cv.bx, by: cv.by == null ? 50 : cv.by }, cur = { bx: st.bx, by: st.by };
+    let moved = false;
+    const clamp = v => Math.max(0, Math.min(100, v));
+    const mv = ev => {
+      const dx = ev.clientX - st.x, dy = ev.clientY - st.y;
+      if(!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      cur.bx = Ex > 1 ? clamp(st.bx - dx / Ex * 100) : st.bx;
+      cur.by = Ey > 1 ? clamp(st.by - dy / Ey * 100) : st.by;
+      gh.style.setProperty('--bpx', cur.bx + '%'); gh.style.setProperty('--bpy', cur.by + '%');
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+      if(!moved) return;
+      suppressUntil = Date.now() + 400;                                   // 拖曳放開時，不要當成「點一下」去開原圖
+      const gg = group(g.id); if(!gg || !gg.opts || !gg.opts.cover) return;
+      const o = { ...gg.opts }; o.cover = { ...o.cover, bx: Math.round(cur.bx * 10) / 10, by: Math.round(cur.by * 10) / 10 };
+      gg.opts = o; commit(gg);
+    };
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+  });
+}
 function coverBox(g){
   const c = (g.opts && g.opts.cover) || null;
-  const box = el('div', { class: 'cover' + (c ? ' has' : ''), role: 'button', tabindex: '0', 'aria-label': c ? '查看照片' : '上傳照片', title: c ? '點這裡看原圖（可更換、刪除）' : '點這裡上傳背景照片' });
+  const box = el('div', { class: 'cover' + (c ? ' has' : ''), role: 'button', tabindex: '0', 'aria-label': c ? '查看照片' : '上傳照片', title: c ? '點一下看原圖（可更換、刪除）；按住拖曳可調整背景範圍' : '點這裡上傳背景照片' });
   if(coverBusy) box.append(el('span', { class: 'cv-ph' }, el('b', {}, '⏳'), el('small', {}, '上傳中')));
   else box.append(el('span', { class: 'cv-ph' }, el('b', {}, '📷'), el('small', {}, '上傳照片')));
   const act = () => { if(blocked() || coverBusy) return; if(c) openCoverViewer(g); else pickCover(g); };
@@ -1231,7 +1272,11 @@ function renderGroup(app, g){
   if(pk){
     const cvb = (g.opts && g.opts.cover) || null;
     const gh = el('div', { class: 'gthead' + (cvb ? ' hasbg' : '') });                // 照片當成整個標題＋工具列區塊的背景（淡化）
-    if(cvb) gh.style.setProperty('--cv', 'url("' + String(cvb.t || cvb.u).replace(/"/g, '%22') + '")');
+    if(cvb){
+      gh.style.setProperty('--cv', 'url("' + String(cvb.t || cvb.u).replace(/"/g, '%22') + '")');
+      gh.style.setProperty('--bpx', (cvb.bx == null ? 50 : cvb.bx) + '%'); gh.style.setProperty('--bpy', (cvb.by == null ? 50 : cvb.by) + '%');
+      coverAR(cvb); bindCoverPan(gh, g);
+    }
     gh.append(el('div', { class: 'gtgrid' },
       el('header', { class: 'gt-a' }, backBtn, title),
       coverBox(g),
