@@ -271,6 +271,40 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .notes .nt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6}
 
 /* ===== 活動標題（群組頁，工具列下方） ===== */
+/* ===== 標題列＋照片區（露營／旅遊） ===== */
+.gtgrid{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"a p b" "c p d";column-gap:10px;row-gap:8px;align-items:center}
+.gtgrid header{margin:0}
+.gt-a{grid-area:a;min-width:0}
+.gt-a h1{flex:none;max-width:40vw}
+.gt-b{grid-area:b;justify-self:end;display:flex;align-items:center;gap:10px}
+.gtgrid .gt-c{grid-area:c;margin:0;flex-wrap:nowrap;min-height:0}
+.gt-d{grid-area:d;justify-self:end;min-width:0}
+.gt-d .sum{display:block;font-size:12px;color:var(--muted);text-align:right;line-height:1.25}
+.gt-d .sum.mv{color:#e5398a;font-weight:500}
+.cover{grid-area:p;align-self:stretch;min-height:76px;border:2px dashed var(--line);border-radius:12px;background:var(--surface);overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);position:relative;min-width:0}
+.cover.has{border:1px solid var(--line);background:var(--surface2)}
+.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;-webkit-user-drag:none}
+.cover:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cv-ph{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2}
+.cv-ph b{font-size:22px;font-weight:400}
+.cv-ph small{font-size:11px}
+@media (max-width:560px){
+  .gtgrid{column-gap:6px;row-gap:6px}
+  .gt-b{gap:4px}
+  .gt-b .sync{padding:4px 2px}
+  .gt-b .sync span{display:none}
+  .gtgrid .icon-btn{min-width:34px;height:34px;padding:0 6px;font-size:16px;border-radius:9px}
+  .gt-a{display:flex;gap:6px}
+  .gt-a h1{font-size:18px;max-width:30vw}
+  .gtgrid .toolbar{gap:4px}
+  .gtgrid .toolbar .master{height:30px;padding:0 4px}
+  .gtgrid .toolbar .master .box{width:20px;height:20px}
+  .gtgrid .toolbar .btn.imp,.gtgrid .toolbar .btn.imp.undo{height:30px;min-width:30px;width:30px;padding:0;font-size:14px;border-radius:8px}
+  .gt-d .sum{font-size:11px;max-width:92px}
+  .cover{min-height:68px;border-radius:10px}
+  .cv-ph b{font-size:18px}
+  .cv-ph small{font-size:10px}
+}
 .triprow{margin:8px -16px 0;padding:0 16px;background:var(--surface);display:flex;align-items:center;gap:8px}
 .triprow .trip{margin:0;padding:6px 0;flex:1;min-width:0;background:transparent}
 .pagesel{flex:none;width:112px;max-width:34vw;height:34px;font:inherit;font-size:13px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:0 6px;text-overflow:ellipsis}
@@ -304,6 +338,13 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .pv-q{flex:none;color:#444}
 .pv-meta{font-size:.75em;color:#666;margin-left:4px;white-space:nowrap}
 .pv-none{color:#777;text-align:center;padding:30px 0;font-size:14px}
+.pv-photo{position:relative;height:55mm;margin:0 0 6px;outline:1px dashed #b8c2c9;outline-offset:-1px}
+.pv-photo img{position:absolute;display:block;height:auto;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.pv-photo img.drag{cursor:grabbing}
+.pv-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 12px;background:#fff;border-bottom:1px solid #c9d2d8;font-size:13px;color:#333}
+.pv-tools input[type=range]{flex:1 1 120px;max-width:240px}
+.pv-tools .btn{height:32px;padding:0 12px;font-size:13px}
+.pv-hint{color:#777;font-size:12px}
 .pv-memo{margin-top:14px!important;min-height:277mm}
 .pv-memo-h{font-weight:700;font-size:14px;color:#555;margin:0 0 6px}
 .pv-memo-t{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7;color:#111}
@@ -313,7 +354,8 @@ input.e-need{color:var(--needpurple);font-weight:500}
   body>*:not(#pv){display:none!important}
   html,body{background:#fff!important;padding:0!important;margin:0!important}
   #pv{position:static!important;display:block!important;background:#fff!important;overflow:visible!important}
-  #pv .pv-bar{display:none!important}
+  #pv .pv-bar,#pv .pv-tools{display:none!important}
+  #pv .pv-photo{outline:none!important}
   #pv .pv-scroll{overflow:visible!important;padding:0!important;background:#fff!important}
   #pv .pv-sheet{zoom:1!important;width:auto!important;padding:0!important;margin:0!important;box-shadow:none!important}
 }
@@ -339,7 +381,7 @@ const FIREBASE_CONFIG = {
 /* =========================================================== */
 
 const LS_DATA = 'mylists-v1', LS_CODE = 'mylists-sync-code';
-const CLOUD_NAME = 'YOUR_CLOUD_NAME';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
+const CLOUD_NAME = 'kelofva';                   // 項目照片上傳到 Cloudinary：填你的 Cloud name（Dashboard 可看到）
 const UPLOAD_PRESET = 'equipment';                      // 你建立的 Unsigned upload preset 名稱（資料夾 camping 已設在 preset 裡）
 const PHOTO_MAX_SIDE = 2400;                            // 照片長邊上限（px），上傳前先縮小以加快速度；設 0 = 不縮小
 const INDEX_ID = '_group_index';   // 群組清單（只有名稱，不含內容）放在這份雲端文件
@@ -1011,13 +1053,14 @@ function ensurePages(g){
 }
 function stashLive(g, o){           // 把目前顯示的頁面收進它自己的紀錄
   const rec = o.pages.find(r => r.id === o.curId);
-  if(rec){ rec.title = o.tripTitle || ''; rec.notes = o.notes || ''; rec.items = g.items; }
+  if(rec){ rec.title = o.tripTitle || ''; rec.notes = o.notes || ''; rec.cover = o.cover || null; rec.items = g.items; }
 }
 function loadPage(g, o, rec){
   g.items = rec.items || [];
   if(rec.title) o.tripTitle = rec.title; else delete o.tripTitle;
   if(rec.notes) o.notes = rec.notes; else delete o.notes;
-  delete rec.items; delete rec.title; delete rec.notes;
+  if(rec.cover) o.cover = rec.cover; else delete o.cover;
+  delete rec.items; delete rec.title; delete rec.notes; delete rec.cover;
   o.curId = rec.id;
 }
 function afterPageChange(g){
@@ -1050,10 +1093,70 @@ function newPage(g){
   allNodes(clone).forEach(x => setState(x, 0));
   const nid = uid();
   o.pages.unshift({ id: nid });                 // 新的一頁排在選單最上面
-  gg.items = clone; o.curId = nid; delete o.tripTitle; delete o.notes;
+  gg.items = clone; o.curId = nid; delete o.tripTitle; delete o.notes; delete o.cover;
   afterPageChange(gg);
   editing = { id: '__trip', field: 'text' };    // 直接進入標題輸入
   commit(gg); window.scrollTo(0, 0); toast('已新增一頁，請輸入標題');
+}
+/* ---------- 照片區（標題旁）：每一頁各自一張，傳到 Cloudinary，顯示縮圖，點一下看原圖，可更換／刪除 ---------- */
+let coverBusy = false;
+function coverBox(g){
+  const c = (g.opts && g.opts.cover) || null;
+  const box = el('div', { class: 'cover' + (c ? ' has' : ''), role: 'button', tabindex: '0', 'aria-label': c ? '查看照片' : '上傳照片', title: c ? '點一下看原圖' : '點一下上傳照片' });
+  if(coverBusy) box.append(el('span', { class: 'cv-ph' }, el('b', {}, '⏳'), el('small', {}, '上傳中')));
+  else if(c) box.append(el('img', { src: c.t || c.u, alt: '', draggable: 'false' }));
+  else box.append(el('span', { class: 'cv-ph' }, el('b', {}, '📷'), el('small', {}, '上傳照片')));
+  const act = () => { if(blocked() || coverBusy) return; if(c) openCoverViewer(g); else pickCover(g); };
+  box.addEventListener('click', act);
+  box.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); act(); } });
+  return box;
+}
+function pickCover(g){
+  const inp = el('input', { type: 'file', accept: 'image/*', class: 'hide' });
+  const done = () => inp.remove();
+  inp.addEventListener('cancel', done);
+  inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; done(); if(f) uploadCover(g, f); });
+  document.body.append(inp); inp.click();
+}
+async function uploadCover(g, file){
+  if(!CLOUD_NAME || CLOUD_NAME === 'YOUR_CLOUD_NAME'){ toast('請先在程式裡填入 Cloudinary 的 Cloud name'); return; }
+  const cid = (g.opts && g.opts.curId) || '';
+  coverBusy = true; render(); toast('照片上傳中…');
+  try{
+    const blob = await shrink(file);
+    const fd = new FormData(); fd.append('file', blob, 'photo.jpg'); fd.append('upload_preset', UPLOAD_PRESET);
+    const res = await fetch('https://api.cloudinary.com/v1_1/' + CLOUD_NAME + '/image/upload', { method: 'POST', body: fd });
+    const j = await res.json();
+    if(!res.ok || !j.secure_url) throw new Error((j.error && j.error.message) || 'upload failed');
+    const gg = group(g.id);
+    coverBusy = false;
+    if(!gg || ((gg.opts && gg.opts.curId) || '') !== cid){ render(); toast('上傳完成，但你已切換到別頁，照片沒有加入'); return; }
+    const o = { ...(gg.opts || {}) };
+    o.cover = { u: j.secure_url, t: j.secure_url.replace('/upload/', '/upload/c_limit,w_800,q_auto,f_auto/') };   // 縮圖由 Cloudinary 即時產生
+    gg.opts = o; commit(gg); toast('照片已上傳');
+  }catch(e){ console.error(e); coverBusy = false; render(); toast('照片上傳失敗，請檢查網路與 Cloudinary 設定'); }
+}
+function openCoverViewer(g){
+  const c = g.opts && g.opts.cover; if(!c) return;
+  const img = el('img', { alt: '照片', src: c.u });
+  const box = el('div', { class: 'vbox' }, img);
+  const ov = el('div', { class: 'viewer', role: 'dialog', 'aria-label': '照片' });
+  const onKey = e => { if(e.key === 'Escape') close(); };
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+  img.addEventListener('click', e => { e.stopPropagation(); box.classList.toggle('full'); });
+  box.addEventListener('click', e => { if(e.target === box) close(); });
+  const del = () => askDelete('刪除這張照片？', '照片會從這一頁移除（Cloudinary 上的檔案不會被刪除，需要時請到 Media Library 手動刪除）。', () => {
+    const gg = group(g.id); if(!gg) return;
+    const o = { ...(gg.opts || {}) }; delete o.cover; gg.opts = o; close(); commit(gg);
+  });
+  ov.append(
+    el('div', { class: 'vbar' }, el('span', { class: 'vt' }, (g.opts && g.opts.tripTitle) || g.name),
+      el('button', { class: 'btn ghost vb', type: 'button', onclick: () => { close(); pickCover(g); } }, '更換'),
+      el('button', { class: 'btn warn vb', type: 'button', onclick: del }, 'DEL'),
+      el('button', { class: 'btn ghost vb', type: 'button', onclick: close, 'aria-label': '關閉' }, '✕')),
+    box, el('div', { class: 'vfoot' }, '點照片可切換「符合螢幕」與「原始大小」'));
+  document.addEventListener('keydown', onKey);
+  document.body.append(ov);
 }
 function tripRow(g){
   const sel = el('select', { class: 'pagesel', 'aria-label': '選擇頁面（依標題）', title: '切換頁面' },
@@ -1097,21 +1200,29 @@ function renderGroup(app, g){
   }
   /* 上方（標題列＋工具列）固定不動，只有下面的清單內容會捲動 */
   const top = el('div', { class: 'gtop' });
-  top.append(el('header', {},
-    el('button', { class: 'icon-btn', onclick: () => goto(null), 'aria-label': '返回' }, '‹'),
-    title, groupBadge(g),
-    el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯')));
+  const backBtn = el('button', { class: 'icon-btn', onclick: () => goto(null), 'aria-label': '返回' }, '‹');
+  const moreBtn = el('button', { class: 'icon-btn', onclick: () => openGroupMenu(g), 'aria-label': '群組選項' }, '⋯');
+  const pk = isPack(g) && !g.locked;            // 露營／旅遊：標題旁多一塊照片區
+  if(!pk) top.append(el('header', {}, backBtn, title, groupBadge(g), moreBtn));
 
   if(g.locked){ app.append(top, lockPanel(g)); return; }
   const mb = checkBox(0); if(all) mb.classList.add('blue');
-  top.append(el('div', { class: 'toolbar' },
+  const tbtns = [
     el('button', { class: 'master', onclick: () => setAll(!all), 'aria-pressed': String(all), 'aria-label': all ? '全部取消' : '全選', title: all ? '全部取消' : '全選', disabled: moveMode ? 'disabled' : null }, mb),
     isPack(g) ? '' : el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openNotes(g), title: 'MEMO', 'aria-label': 'MEMO' }, '📝') : '',
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的勾選', 'aria-label': '復原上一個動作' }, '↶'),
     isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => newPageDialog(g), title: '新增一頁：複製目前的小群組與清單，全部恢復未勾選（目前這一頁會保留）', 'aria-label': '新增一頁' }, '🆕') : '',
-    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合、只看未準備', 'aria-label': '更多功能' }, '⋯') : '',
-    el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${onlyTodo ? '🔎 只看未準備　' : ''}${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
+    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合、只看未準備', 'aria-label': '更多功能' }, '⋯') : ''];
+  const sumEl = el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${onlyTodo ? '🔎 只看未準備　' : ''}${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''));
+  if(pk){
+    top.append(el('div', { class: 'gtgrid' },
+      el('header', { class: 'gt-a' }, backBtn, title),
+      coverBox(g),
+      el('div', { class: 'gt-b' }, groupBadge(g), moreBtn),
+      el('div', { class: 'toolbar gt-c' }, tbtns),
+      el('div', { class: 'gt-d' }, sumEl)));
+  } else top.append(el('div', { class: 'toolbar' }, tbtns, sumEl));
   if(isPack(g)) top.append(tripRow(g));
   app.append(top);
 
@@ -1539,7 +1650,9 @@ function buildSheet(g, sheet, mode){
     return el('div', { class: 'pv-row' }, mkBox(it), el('span', { class: 'pv-t' }, it.text, metas),
       kd !== 'todo' && it.qty ? el('span', { class: 'pv-q' }, el('span', { class: 'pv-need' }, mode === 0 ? '' : String((it.need !== undefined && it.need !== '' && it.need != null) ? it.need : it.qty)), ' / ' + it.qty) : '');
   };
-  const head = el('div', { class: 'pv-head' }, el('h1', {}, (g.opts && g.opts.tripTitle) || g.name), el('hr'));
+  const cv = g.opts && g.opts.cover;
+  const photo = (cv && cv.pshow !== false) ? buildPhoto(g, cv) : '';            // 標題上方的照片區（可拖曳位置、調整大小）
+  const head = el('div', { class: 'pv-head' }, photo, el('h1', {}, (g.opts && g.opts.tripTitle) || g.name), el('hr'));
   const cols = el('div', { class: 'pv-cols' });
   let si = 0;
   const subEl = (s, label, num, depth) => {
@@ -1564,6 +1677,49 @@ function buildSheet(g, sheet, mode){
   });
   if(!cols.children.length) cols.append(el('div', { class: 'pv-none' }, '（沒有符合的項目）'));
   sheet.append(head, cols);
+}
+/* 列印頁的照片：固定高度的版面框（190mm × 55mm），照片可在框內拖曳移動、用滑桿縮放；位置與大小記在 opts.cover，下次開啟還是一樣 */
+function savePhotoLayout(gid, lay){
+  const gg = group(gid); if(!gg || !gg.opts || !gg.opts.cover) return;
+  const o = { ...gg.opts }; o.cover = { ...o.cover, ps: lay.ps, px: lay.px, py: lay.py };
+  gg.opts = o; commit(gg);
+}
+function buildPhoto(g, cv){
+  const R = 55 / 190;                                                       // 框的高／寬
+  const lay = { ps: cv.ps || 1, px: cv.px, py: cv.py };
+  const frame = el('div', { class: 'pv-photo' });
+  const img = el('img', { src: cv.u, alt: '', draggable: 'false' });
+  frame.append(img); frame._lay = lay;
+  const calc = () => {
+    const ar = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.75;
+    const w = Math.min(1, R / ar) * Math.max(0.2, Math.min(1, lay.ps));     // 100% ＝ 剛好放進框內
+    return { w, h: w * ar / R };
+  };
+  frame._apply = () => {
+    const d = calc();
+    lay.px = Math.max(0, Math.min(1 - d.w, lay.px == null ? (1 - d.w) / 2 : lay.px));
+    lay.py = Math.max(0, Math.min(1 - d.h, lay.py == null ? (1 - d.h) / 2 : lay.py));
+    img.style.left = (lay.px * 100) + '%'; img.style.top = (lay.py * 100) + '%'; img.style.width = (d.w * 100) + '%';
+  };
+  frame._scale = v => {                                                     // 縮放時以照片中心為準
+    const o = calc(), cx = (lay.px == null ? (1 - o.w) / 2 : lay.px) + o.w / 2, cy = (lay.py == null ? (1 - o.h) / 2 : lay.py) + o.h / 2;
+    lay.ps = v; const n = calc(); lay.px = cx - n.w / 2; lay.py = cy - n.h / 2; frame._apply();
+  };
+  img.addEventListener('load', frame._apply);
+  img.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    try{ img.setPointerCapture(e.pointerId); }catch(x){}
+    const r = frame.getBoundingClientRect(), st = { x: e.clientX, y: e.clientY, px: lay.px, py: lay.py };
+    img.classList.add('drag');
+    const mv = ev => { lay.px = st.px + (ev.clientX - st.x) / r.width; lay.py = st.py + (ev.clientY - st.y) / r.height; frame._apply(); };
+    const up = () => {
+      img.removeEventListener('pointermove', mv); img.removeEventListener('pointerup', up); img.removeEventListener('pointercancel', up);
+      img.classList.remove('drag'); savePhotoLayout(g.id, lay);
+    };
+    img.addEventListener('pointermove', mv); img.addEventListener('pointerup', up); img.addEventListener('pointercancel', up);
+  });
+  frame._apply();
+  return frame;
 }
 function buildMemo(g, memo){
   const t = (g.opts && g.opts.notes) || '';
@@ -1598,8 +1754,28 @@ function openPrintView(g){
     mbtn.setAttribute('aria-label', PV_MODES[pvMode]); mbtn.title = '點一下切換：□ → ■ → ☑';
     cap.textContent = PV_MODES[pvMode];
   };
+  const gcur = () => group(g.id) || g;
+  const tools = el('div', { class: 'pv-tools' });
+  const range = el('input', { type: 'range', min: '20', max: '100', step: '1', 'aria-label': '照片大小' });
+  const tgl = el('button', { class: 'btn ghost', type: 'button' });
+  tools.append(el('span', {}, '🖼️ 照片大小'), range, tgl, el('span', { class: 'pv-hint' }, '在照片上按住拖曳，可移動位置'));
+  const paintTools = () => {
+    const c = (gcur().opts || {}).cover;
+    tools.classList.toggle('hide', !c);
+    if(!c) return;
+    range.value = String(Math.round((c.ps || 1) * 100)); range.disabled = c.pshow === false;
+    tgl.textContent = c.pshow === false ? '顯示照片' : '隱藏照片';
+  };
+  range.addEventListener('input', () => { const fr = sheet.querySelector('.pv-photo'); if(fr) fr._scale(range.value / 100); });
+  range.addEventListener('change', () => { const fr = sheet.querySelector('.pv-photo'); if(fr) savePhotoLayout(g.id, fr._lay); });
+  tgl.addEventListener('click', () => {
+    const gg = gcur(); if(!gg.opts || !gg.opts.cover) return;
+    const o = { ...gg.opts }; o.cover = { ...o.cover, pshow: o.cover.pshow === false }; gg.opts = o; commit(gg);
+    rebuild();
+  });
   const rebuild = () => {
     const gg = group(g.id) || g;
+    paintTools();
     buildSheet(gg, sheet, pvMode); fitSheet(sheet); buildMemo(gg, memo);
     const sc = Math.min(1, (window.innerWidth - 16) / (210 * 96 / 25.4));
     sheet.style.zoom = sc < 1 ? String(sc) : ''; memo.style.zoom = sc < 1 ? String(sc) : '';             // 手機畫面縮小預覽；列印時一律用原尺寸
@@ -1609,6 +1785,7 @@ function openPrintView(g){
     el('div', { class: 'pv-bar' }, mbtn, cap,
       el('button', { class: 'btn', type: 'button', onclick: () => window.print(), 'aria-label': '列印' }, '🖨️ 列印'),
       el('button', { class: 'btn ghost', type: 'button', onclick: closePrintView, 'aria-label': '關閉' }, '✕')),
+    tools,
     el('div', { class: 'pv-scroll' }, sheet, memo));
   document.body.append(ov);
   document.addEventListener('keydown', pvKey);
