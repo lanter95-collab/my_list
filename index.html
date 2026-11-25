@@ -271,6 +271,9 @@ input.e-need{color:var(--needpurple);font-weight:500}
 .notes .nt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6}
 
 /* ===== 活動標題（群組頁，工具列下方） ===== */
+.triprow{margin:8px -16px 0;padding:0 16px;background:var(--surface);display:flex;align-items:center;gap:8px}
+.triprow .trip{margin:0;padding:6px 0;flex:1;min-width:0;background:transparent}
+.pagesel{flex:none;width:112px;max-width:34vw;height:34px;font:inherit;font-size:13px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:0 6px;text-overflow:ellipsis}
 .trip{margin:8px -16px 0;padding:6px 16px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:700;min-height:42px;display:flex;align-items:center;overflow-wrap:anywhere;cursor:text;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .trip.ph{color:var(--muted);opacity:.6;font-weight:400}
 .trip input{height:40px;font-size:17px;font-weight:700;width:100%}
@@ -994,6 +997,71 @@ const subNum = i => String(i + 1).padStart(2, '0');
 const subLabel = (g, i) => prefixOf(g) + '-' + subNum(i);
 
 /* 活動標題（工具列下方）：點兩下（手機：按住再放開）修改；沒填時顯示淺灰色「活動標題」。存在 g.opts.tripTitle，會跟著同步 */
+/* ---------- 多頁：每次露營／旅遊一頁。目前顯示的頁面存在 g.items／opts.tripTitle／opts.notes，其他頁面收在 opts.pages 裡 ---------- */
+function pageEntries(g){
+  const o = g.opts || {};
+  const lbl = t => (t && String(t).trim()) || '（未命名）';
+  if(!o.pages) return [{ id: 'live', label: lbl(o.tripTitle) }];
+  return o.pages.map(r => ({ id: r.id, label: lbl(r.id === o.curId ? o.tripTitle : r.title) }));
+}
+function ensurePages(g){
+  const o = { ...(g.opts || {}) };
+  if(!o.pages){ o.curId = uid(); o.pages = [{ id: o.curId }]; }
+  g.opts = o; return o;
+}
+function stashLive(g, o){           // 把目前顯示的頁面收進它自己的紀錄
+  const rec = o.pages.find(r => r.id === o.curId);
+  if(rec){ rec.title = o.tripTitle || ''; rec.notes = o.notes || ''; rec.items = g.items; }
+}
+function loadPage(g, o, rec){
+  g.items = rec.items || [];
+  if(rec.title) o.tripTitle = rec.title; else delete o.tripTitle;
+  if(rec.notes) o.notes = rec.notes; else delete o.notes;
+  delete rec.items; delete rec.title; delete rec.notes;
+  o.curId = rec.id;
+}
+function afterPageChange(g){
+  for(let i = undoStack.length - 1; i >= 0; i--) if(undoStack[i].gid === g.id) undoStack.splice(i, 1);
+  moveMode = false; moveSel = new Set(); addTarget = ''; editing = null; hideUndoToast();
+}
+function switchPage(g, id){
+  const gg = group(g.id); if(!gg) return;
+  const o0 = gg.opts || {};
+  if(!o0.pages || id === o0.curId) return;
+  const o = ensurePages(gg);
+  const rec = o.pages.find(r => r.id === id); if(!rec) return;
+  stashLive(gg, o); loadPage(gg, o, rec);
+  afterPageChange(gg); commit(gg); window.scrollTo(0, 0);
+}
+function newPageDialog(g){
+  openDialog((f, close) => {
+    f.append(el('h2', {}, '新增一頁？'),
+      el('p', {}, '會複製目前的小群組、小小群組與清單（內容、數量、排列順序都保留），全部恢復成未勾選；標題與 MEMO 留白。目前這一頁會原封不動保留，之後可從標題左邊的選單切換回來。'),
+      el('div', { class: 'acts' },
+        el('button', { class: 'btn ghost', type: 'button', onclick: close }, '取消'),
+        el('button', { class: 'btn', type: 'button', onclick: () => { close(); newPage(g); } }, '新增')));
+  });
+}
+function newPage(g){
+  const gg = group(g.id); if(!gg) return;
+  const o = ensurePages(gg);
+  stashLive(gg, o);
+  const clone = JSON.parse(JSON.stringify(gg.items));
+  allNodes(clone).forEach(x => setState(x, 0));
+  const nid = uid();
+  o.pages.unshift({ id: nid });                 // 新的一頁排在選單最上面
+  gg.items = clone; o.curId = nid; delete o.tripTitle; delete o.notes;
+  afterPageChange(gg);
+  editing = { id: '__trip', field: 'text' };    // 直接進入標題輸入
+  commit(gg); window.scrollTo(0, 0); toast('已新增一頁，請輸入標題');
+}
+function tripRow(g){
+  const sel = el('select', { class: 'pagesel', 'aria-label': '選擇頁面（依標題）', title: '切換頁面' },
+    pageEntries(g).map(e => el('option', { value: e.id }, e.label)));
+  sel.value = (g.opts && g.opts.curId) || 'live';
+  sel.addEventListener('change', () => switchPage(g, sel.value));
+  return el('div', { class: 'triprow' }, sel, tripBar(g));
+}
 function tripBar(g){
   const t = (g.opts && g.opts.tripTitle) || '';
   if(editing && editing.id === '__trip'){
@@ -1041,9 +1109,10 @@ function renderGroup(app, g){
     isPack(g) ? '' : el('button', { class: 'btn ghost imp', onclick: pickImport, title: '從 txt 檔匯入', 'aria-label': '從 txt 檔匯入' }, '📥'),
     isPack(g) ? el('button', { class: 'btn ghost imp', onclick: () => openNotes(g), title: 'MEMO', 'aria-label': 'MEMO' }, '📝') : '',
     el('button', { class: 'btn ghost imp undo', onclick: undoLast, disabled: (canUndo(g) && !moveMode) ? null : 'disabled', title: '復原上一次的勾選', 'aria-label': '復原上一個動作' }, '↶'),
+    isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => newPageDialog(g), title: '新增一頁：複製目前的小群組與清單，全部恢復未勾選（目前這一頁會保留）', 'aria-label': '新增一頁' }, '🆕') : '',
     isPack(g) ? el('button', { class: 'btn ghost imp undo', onclick: () => openToolMenu(g), title: '更多功能：儲存、匯入、清空勾選、重整、生成網頁、展開／收合、只看未準備', 'aria-label': '更多功能' }, '⋯') : '',
     el('span', { class: 'sum' + (moveMode ? ' mv' : '') }, moveMode ? `搬移模式　已選 ${moveSel.size} 項` : (total ? `${onlyTodo ? '🔎 只看未準備　' : ''}${isPack(g) ? '已準備' : '已完成'} ${done} / ${total}` : ''))));
-  if(isPack(g)) top.append(tripBar(g));
+  if(isPack(g)) top.append(tripRow(g));
   app.append(top);
 
   if(!g.items.length){
@@ -1124,6 +1193,7 @@ function pickJsonImport(g){
       () => {
         const gg = group(g.id); if(!gg) return;
         const o = { ...(d.opts || {}) };
+        if(!o.pages && gg.opts && gg.opts.pages){ o.pages = gg.opts.pages; o.curId = gg.opts.curId; }     // 舊備份沒有多頁資料時，保留目前其他頁面
         if(d.notes && !o.notes) o.notes = d.notes;
         if(d.tripTitle && !o.tripTitle) o.tripTitle = d.tripTitle;
         gg.items = d.items; gg.opts = o;
